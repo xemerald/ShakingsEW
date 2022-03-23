@@ -1,0 +1,66 @@
+#
+#
+#
+CFLAGS = $(GLOBALFLAGS) -O3 -g -I../../include -I./include -flto
+LIBS = -lm -lpthread $(MT_FLAG) -lpng -lz
+FCOMPL = gfortran
+
+EW_BINDIR = $(EW_HOME)/$(EW_VERSION)/bin
+EW_LIBDIR = $(EW_HOME)/$(EW_VERSION)/lib
+
+#
+#
+#
+EWLIBS = $(EW_LIBDIR)/lockfile_ew.o $(EW_LIBDIR)/lockfile.o \
+         $(EW_LIBDIR)/mem_circ_queue.o $(EW_LIBDIR)/libew_mt.a
+
+EEWLIBS = ../../lib/libmisc.a ../../lib/libslist.a
+
+CPGPLOT_LIB = ../../lib/libcpgplot.a ../../lib/libpgplot.a
+
+#
+#
+#
+OBJS = postshake.o postshake_msg_queue.o \
+	   postshake_plot.o postshake_misc.o
+
+#
+# Default target for this makefile
+#
+default: ver_709
+
+#
+# Compile rule for postshake module
+#
+postshake: $(EWLIBS) $(OBJS)
+	@echo Creating $@...
+	@$(FCOMPL) -o $(EW_BINDIR)/$@ $(OBJS) $(CPGPLOT_LIB) $(EWLIBS) $(EEWLIBS) $(LIBS)
+
+#
+# Compile rule for Earthworm version under 7.09
+#
+ver_709: postshake
+
+#
+# Compile rule for Earthworm version over 7.10
+#
+ver_710: CFLAGS+=-D_V710
+ver_710: postshake
+
+#
+#
+#
+.c.o:
+	@echo Compiling $<...
+	@$(CC) $(CFLAGS) -c $<
+
+#
+# Clean-up rules
+#
+clean:
+	@echo Cleaning build objects...
+	@rm -f a.out core *.o *.obj *% *~
+
+clean_bin:
+	@echo Removing binary execution file...
+	@rm -f $(EW_BINDIR)/postshake*
