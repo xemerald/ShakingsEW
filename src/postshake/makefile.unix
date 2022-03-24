@@ -2,7 +2,7 @@
 #
 #
 CFLAGS = $(GLOBALFLAGS) -O3 -g -I../../include -I./include -flto
-LIBS = -lm -lpthread $(MT_FLAG) -lpng -lz
+LIBS = -lm -lpthread $(MT_FLAG) -lpng -lz -lrt 
 FCOMPL = gfortran
 
 EW_BINDIR = $(EW_HOME)/$(EW_VERSION)/bin
