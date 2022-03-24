@@ -6,6 +6,7 @@ LIBS = -lm -lpthread $(MT_FLAG)
 
 EW_BINDIR = $(EW_HOME)/$(EW_VERSION)/bin
 EW_LIBDIR = $(EW_HOME)/$(EW_VERSION)/lib
+LC_LIBDIR = ../../lib
 
 #
 #
@@ -13,24 +14,22 @@ EW_LIBDIR = $(EW_HOME)/$(EW_VERSION)/lib
 EWLIBS = $(EW_LIBDIR)/lockfile_ew.o $(EW_LIBDIR)/lockfile.o \
          $(EW_LIBDIR)/mem_circ_queue.o $(EW_LIBDIR)/libew_mt.a
 
-EEWLIBS = ../../lib/libmisc.a
+LCLIBS = $(LC_LIBDIR)/libshakings.a
 
 #
 #
 #
-OBJS = respectra.o respectra_list.o respectra_pmat.o
-
-#
-# Default target for this makefile
-#
-default: ver_709
+OBJS = \
+	respectra.o \
+	respectra_list.o \
+	respectra_pmat.o
 
 #
 # Compile rule for respectra module
 #
-respectra: $(EWLIBS) $(OBJS)
+respectra: $(OBJS)
 	@echo Creating $@...
-	@$(CC) $(CFLAGS) -o $(EW_BINDIR)/$@ $(OBJS) $(EWLIBS) $(EEWLIBS) $(LIBS)
+	@$(CC) $(CFLAGS) -o $(EW_BINDIR)/$@ $(OBJS) $(EWLIBS) $(LCLIBS) $(LIBS)
 
 #
 # Compile rule for Earthworm version under 7.09

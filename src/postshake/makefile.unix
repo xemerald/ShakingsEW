@@ -7,6 +7,7 @@ FCOMPL = gfortran
 
 EW_BINDIR = $(EW_HOME)/$(EW_VERSION)/bin
 EW_LIBDIR = $(EW_HOME)/$(EW_VERSION)/lib
+LC_LIBDIR = ../../lib
 
 #
 #
@@ -14,27 +15,25 @@ EW_LIBDIR = $(EW_HOME)/$(EW_VERSION)/lib
 EWLIBS = $(EW_LIBDIR)/lockfile_ew.o $(EW_LIBDIR)/lockfile.o \
          $(EW_LIBDIR)/mem_circ_queue.o $(EW_LIBDIR)/libew_mt.a
 
-EEWLIBS = ../../lib/libmisc.a ../../lib/libslist.a
+LCLIBS = $(LC_LIBDIR)/libshakings.a
 
-CPGPLOT_LIB = ../../lib/libcpgplot.a ../../lib/libpgplot.a
-
-#
-#
-#
-OBJS = postshake.o postshake_msg_queue.o \
-	   postshake_plot.o postshake_misc.o
+CPGPLOT_LIB = $(LC_LIBDIR)/libcpgplot.a $(LC_LIBDIR)/libpgplot.a
 
 #
-# Default target for this makefile
 #
-default: ver_709
+#
+OBJS = \
+	postshake.o \
+	postshake_msg_queue.o \
+	postshake_plot.o \
+	postshake_misc.o
 
 #
 # Compile rule for postshake module
 #
-postshake: $(EWLIBS) $(OBJS)
+postshake: $(OBJS)
 	@echo Creating $@...
-	@$(FCOMPL) -o $(EW_BINDIR)/$@ $(OBJS) $(CPGPLOT_LIB) $(EWLIBS) $(EEWLIBS) $(LIBS)
+	@$(FCOMPL) -o $(EW_BINDIR)/$@ $(OBJS) $(CPGPLOT_LIB) $(EWLIBS) $(LCLIBS) $(LIBS)
 
 #
 # Compile rule for Earthworm version under 7.09

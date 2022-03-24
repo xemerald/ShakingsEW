@@ -1,15 +1,4 @@
 /*
- *     Revision history:
- *
- *     Revision 1.1  2020/03/06 19:29:20  Benjamin Yang
- *     Modify the type of samprate & conversion_factor to float
- *
- *     Revision 1.0  2018/03/19 16:17:44  Benjamin Yang
- *     Initial revision
- *
- */
-
-/*
  * cf2trace.h
  *
  * Header file for unified plateform station list data.
@@ -23,18 +12,18 @@
  */
 #pragma once
 
-#include <stalist.h>
-
+#include <trace_buf.h>
+/* */
+#define CF2TRA_INFO_FROM_SQL  6
 /* Trace info related struct */
 typedef struct {
 	uint16_t seq;
 	uint16_t recordtype;
 
-	char sta[STA_CODE_LEN];
-	char net[NET_CODE_LEN];
-	char loc[LOC_CODE_LEN];
-	char chan[CHAN_CODE_LEN];
+	char sta[TRACE2_STA_LEN];
+	char net[TRACE2_NET_LEN];
+	char loc[TRACE2_LOC_LEN];
+	char chan[TRACE2_CHAN_LEN];
 
-	float samprate;
 	float conversion_factor;
 } _TRACEINFO;

@@ -6,6 +6,7 @@ LIBS = -lm -lpthread -lwebsockets -ljson-c $(MT_FLAG)
 
 EW_BINDIR = $(EW_HOME)/$(EW_VERSION)/bin
 EW_LIBDIR = $(EW_HOME)/$(EW_VERSION)/lib
+LC_LIBDIR = ../../lib
 
 #
 #
@@ -13,24 +14,22 @@ EW_LIBDIR = $(EW_HOME)/$(EW_VERSION)/lib
 EWLIBS = $(EW_LIBDIR)/lockfile_ew.o $(EW_LIBDIR)/lockfile.o \
          $(EW_LIBDIR)/mem_circ_queue.o $(EW_LIBDIR)/libew_mt.a
 
-EEWLIBS = ../../lib/libslist.a ../../lib/libmisc.a ../../lib/libdl_chain_list.a
+LCLIBS = $(LC_LIBDIR)/libshakings.a $(LC_LIBDIR)/libdl_chain_list.a
 
 #
 #
 #
-OBJS = shake2ws.o shake2ws_list.o shake2ws_protocols.o
-
-#
-# Default target for this makefile
-#
-default: ver_709
+OBJS = \
+	shake2ws.o \
+	shake2ws_list.o \
+	shake2ws_protocols.o
 
 #
 # Compile rule for shake2ws module
 #
-shake2ws: $(EWLIBS) $(OBJS)
+shake2ws: $(OBJS)
 	@echo Creating $@...
-	@$(CC) $(CFLAGS) -o $(EW_BINDIR)/$@ $(OBJS) $(EWLIBS) $(EEWLIBS) $(LIBS)
+	@$(CC) $(CFLAGS) -o $(EW_BINDIR)/$@ $(OBJS) $(EWLIBS) $(LCLIBS) $(LIBS)
 
 #
 # Compile rule for Earthworm version under 7.09

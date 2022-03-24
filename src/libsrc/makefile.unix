@@ -4,27 +4,28 @@
 #     Revision 1.0  2018/03/19 17:38:40  Benjamin Yang
 #     Initial version.
 #
-CFLAGS  = $(GLOBALFLAGS) -g -I../../include
+LOCAL_UTILS = \
+	datestring.o \
+	dblist.o \
+	geogfunc.o \
+	iirfilter.o \
+	recordtype.o \
+	shakeint.o
+
+CFLAGS  = $(GLOBALFLAGS) -g -I/usr/include/mysql -I../../include
 
 LIB_DIR = ../../lib
 
 # All library command
-all: libslist.a libmisc.a libdl_chain_list.a pgplot
+all: libshakings.a libdl_chain_list.a pgplot
 	@mv *.a $(LIB_DIR)
 
 #
-# Station list related library
 #
-libslist.a: recordtype.o
+#
+libshakings.a: $(LOCAL_UTILS)
 	@echo Creating $@...
-	@ar -rcs $@ recordtype.o
-
-#
-# Misc library
-#
-libmisc.a: geogfunc.o datestring.o iirfilter.o shakeint.o
-	@echo Creating $@...
-	@ar -rcs $@ geogfunc.o datestring.o iirfilter.o shakeint.o
+	@ar -rcs $@ $(LOCAL_UTILS)
 
 #
 # Double-linked list library

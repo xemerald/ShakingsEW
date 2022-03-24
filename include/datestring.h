@@ -25,5 +25,5 @@
 #define MAX_DSTR_LENGTH  16
 
 /* Function prototype */
-char *date2spstring( struct tm *, char *, size_t );
+char      *date2spstring( struct tm *, char *, size_t );
 struct tm *spstring2date( struct tm *, char * );

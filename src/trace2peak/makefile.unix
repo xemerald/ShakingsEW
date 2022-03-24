@@ -6,6 +6,7 @@ LIBS = -lm -lpthread $(MT_FLAG)
 
 EW_BINDIR = $(EW_HOME)/$(EW_VERSION)/bin
 EW_LIBDIR = $(EW_HOME)/$(EW_VERSION)/lib
+LC_LIBDIR = ../../lib
 
 #
 #
@@ -16,17 +17,14 @@ EWLIBS = $(EW_LIBDIR)/lockfile_ew.o $(EW_LIBDIR)/lockfile.o \
 #
 #
 #
-OBJS = trace2peak.o trace2peak_list.o
-
-#
-# Default target for this makefile
-#
-default: ver_709
+OBJS = \
+	trace2peak.o \
+	trace2peak_list.o
 
 #
 # Compile rule for trace2peak module
 #
-trace2peak: $(EWLIBS) $(OBJS)
+trace2peak: $(OBJS)
 	@echo Creating $@...
 	@$(CC) $(CFLAGS) -o $(EW_BINDIR)/$@ $(OBJS) $(EWLIBS) $(LIBS)
 

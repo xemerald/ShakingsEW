@@ -2,422 +2,443 @@
 /* Standard C header include */
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
 #include <string.h>
+#include <stdint.h>
 #include <search.h>
-#include <unistd.h>
-#include <errno.h>
-
+#include <time.h>
+#include <ctype.h>
 /* Earthworm environment header include */
 #include <earthworm.h>
-#include <transport.h>
-#include <trace_buf.h>
-
 /* Local header include */
-#include <stalist.h>
+#include <dblist.h>
+#include <dl_chain_list.h>
 #include <recordtype.h>
 #include <cf2trace.h>
 #include <cf2trace_list.h>
+/* */
+typedef struct {
+	int     count;      /* Number of clients in the list */
+	time_t  timestamp;  /* Time of the last time updated */
+	void   *entry;      /* Pointer to first client       */
+	void   *root;       /* Root of binary searching tree */
+	void   *root_t;     /* Temporary root of binary searching tree */
+} TraceList;
 
+/* */
+static int         fetch_list_sql( TraceList *, const char *, const DBINFO *, const int );
+static TraceList  *init_trace_list( void );
+static void        destroy_trace_list( TraceList * );
+static int         compare_scnl( const void *, const void * );
+static void        dummy_func( void * );
+static _TRACEINFO *update_traceinfo( _TRACEINFO *, const _TRACEINFO * );
+static _TRACEINFO *append_traceinfo_list( TraceList *, _TRACEINFO *, const int );
+static _TRACEINFO *create_new_traceinfo(
+	const char *, const char *, const char *, const char *, const uint8_t, const float
+);
+static _TRACEINFO *enrich_traceinfo_raw(
+	_TRACEINFO *, const char *, const char *, const char *, const char *, const uint8_t, const float
+);
+/* */
+#if defined( _USE_SQL )
+static void extract_traceinfo_mysql(
+	char *, char *, char *, char *, uint8_t *, float *, const MYSQL_ROW, const unsigned long []
+);
+#endif
+/* */
+static TraceList *TList = NULL;
 
-static int  _FetchTraListRing( GETLISTS *, const unsigned short );
-static int  _FetchTraListFile( GETLISTS *, const unsigned short );
-static int  SCNLCompare( const void *, const void * );	/* The compare function of binary tree search */
-
-#define  MAXLIST  5
-
-static void          *Root = NULL;         /* Root of binary tree */
-static volatile _Bool RingSwitch = 0;  /* The switch for getting list from ring. */
-static GETLISTS       GetLists[MAXLIST];   /* array for requesting list name */
-static uint16_t       nLists = 0;
-static uint8_t        Historical = 0;
-
-/*********************************************************************
- *  TraListInit( ) -- Initialization function of Station list.       *
- *  Arguments:                                                       *
- *    ringName   = Name of list ring.                                *
- *    modId      = The module ID of calling process.                 *
- *    ringSwitch = The switch for getting list from ring.            *
- *  Returns:                                                         *
- *     0 = Normal.                                                   *
- *********************************************************************/
-int TraListInit( char *ringName, char *modName, uint8_t ringSwitch )
+/*
+ * cf2tra_list_db_fetch() -
+ */
+int cf2tra_list_db_fetch( const char *table_chan, const DBINFO *dbinfo, const int update )
 {
-	if ( ringSwitch ) {
-		sslist_init( ringName, modName );
-		RingSwitch = 1;
-	}
-	else RingSwitch = 0;
-
-	return 0;
-}
-
-
-/*********************************************************************
- *  TraListReg( ) -- Register the station list to GetList array.     *
- *  Arguments:                                                       *
- *    staListName   = Name of station list.                          *
- *    chanListName  = Name of channel list.                          *
- *  Returns:                                                         *
- *     0 = Normal.                                                   *
- *********************************************************************/
-int TraListReg( char *staListName, char *chanListName )
-{
-	if ( nLists+1 >= (int)MAXLIST ) {
-		logit( "e",	"cf2trace: Too many station list, maximum is %d!\n", (int)MAXLIST );
-		return -1;
+	if ( !TList ) {
+		TList = init_trace_list();
+		if ( !TList ) {
+			logit("e", "cf2trace: Fatal! Trace list memory initialized error!\n");
+			return -3;
+		}
 	}
 
-	if ( strlen(staListName) < LIST_NAME_LEN )
-		strcpy( GetLists[nLists].sslist.stalist, staListName );
-	else {
-		logit ( "e", "cf2trace: Station list %s name too long, maximum is %d!\n", staListName, (int)LIST_NAME_LEN );
-		return -2;
-	}
-
-	if ( strlen(chanListName) < LIST_NAME_LEN )
-		strcpy( GetLists[nLists].sslist.chanlist, chanListName );
-	else {
-		logit ( "e", "cf2trace: Station list %s name too long, maximum is %d!\n", chanListName, (int)LIST_NAME_LEN );
-		return -2;
-	}
-
-	nLists++;
-
-	return 0;
-}
-
-
-/*********************************************************************
- *  TraListFetch( ) -- Initialization function of Station list.      *
- *  Arguments:                                                       *
- *    None.                                                          *
- *  Returns:                                                         *
- *     0 = Normal.                                                   *
- *********************************************************************/
-int TraListFetch( void )
-{
-	if ( RingSwitch )
-		return _FetchTraListRing( GetLists, nLists );
+	if ( strlen(dbinfo->host) > 0 && strlen(table_chan) > 0 )
+		return fetch_list_sql( TList, table_chan, dbinfo, update );
 	else
-		return _FetchTraListFile( GetLists, nLists );
+		return 0;
 }
 
-
-/*********************************************************************
- *  _FetchTraListRing( ) -- Get Stations list from list ring.        *
- *  Arguments:                                                       *
- *    _getLists   = Name of list ring.                               *
- *    nLists     = The module ID of calling process.                 *
- *  Returns:                                                         *
- *     0 = Normal.                                                   *
- *********************************************************************/
-static int _FetchTraListRing( GETLISTS *_getLists, const unsigned short _nLists )
+/*
+ *
+ */
+int cf2tra_list_chan_line_parse( const char *line, const int update )
 {
-	int ret = 0;
-	uint32_t i, j;
-	uint32_t count = 0;
+	int     result = 0;
+	char    sta[TRACE2_STA_LEN]   = { 0 };
+	char    net[TRACE2_NET_LEN]   = { 0 };
+	char    loc[TRACE2_LOC_LEN]   = { 0 };
+	char    chan[TRACE2_CHAN_LEN] = { 0 };
+	char    typestr[TYPE_STR_LEN] = { 0 };
+	uint8_t rtype = 0;
+	float   cfactor;
 
-	_TRACEINFO *traceinfo = NULL;
+/* */
+	if ( !TList ) {
+		TList = init_trace_list();
+		if ( !TList ) {
+			logit("e", "cf2trace: Fatal! Trace list memory initialized error!\n");
+			return -3;
+		}
+	}
+/* */
+	if ( sscanf(line, "%s %s %s %s %s %f", sta, net, loc, chan, typestr, &cfactor) >= 6 ) {
+	/* */
+		rtype = typestr2num( typestr );
+		if ( append_traceinfo_list( TList, create_new_traceinfo( sta, net, loc, chan, rtype, cfactor ), update ) == NULL )
+			result = -2;
+	}
+	else {
+		logit("e", "cf2trace: ERROR, lack of some trace information in local list!\n");
+		result = -1;
+	}
 
-	STALIST_HEADER *slptr = NULL;
-	STATION_BLOCK  *station_blk = NULL;
-	STATION_BLOCK  *station_end = NULL;
-	CHAN_BLOCK     *chan_blk = NULL;
+	return result;
+}
 
-	void *root = NULL;
-	void *tmproot = Root;
+/*
+ * cf2tra_list_end() -
+ */
+void cf2tra_list_end( void )
+{
+	destroy_trace_list( TList );
+	TList = NULL;
 
-	if ( Historical ) return 0;
+	return;
+}
 
-/* Initialize */
-	for ( i=0; i<_nLists; i++ ) {
-	/* Force to update shared station list */
-		_getLists[i].sslist.shkey = 0;
+/*
+ * cf2tra_list_find() -
+ */
+_TRACEINFO *cf2tra_list_find( const TRACE2X_HEADER *trh2x )
+{
+	_TRACEINFO *result = NULL;
+	_TRACEINFO  key;
 
-		if ( sslist_req( &_getLists[i].sslist ) == SL_REQ_OK ) {
-			sslist_attach( &_getLists[i].sslist );
+/* */
+	memcpy(key.sta, trh2x->sta, TRACE2_STA_LEN);
+	memcpy(key.net, trh2x->net, TRACE2_NET_LEN);
+	memcpy(key.loc, trh2x->loc, TRACE2_LOC_LEN);
+	memcpy(key.chan, trh2x->chan, TRACE2_LOC_LEN);
+/* Find which station */
+	if ( (result = tfind(&key, &TList->root, compare_scnl)) != NULL ) {
+	/* Found in the main Palert table */
+		result = *(_TRACEINFO **)result;
+	}
+
+	return result;
+}
+
+/*
+ * cf2tra_list_tree_activate() -
+ */
+void cf2tra_list_tree_activate( void )
+{
+	void *_root = TList->root;
+
+	TList->root      = TList->root_t;
+	TList->root_t    = NULL;
+	TList->timestamp = time(NULL);
+
+	if ( _root ) {
+		sleep_ew(1000);
+		tdestroy(_root, dummy_func);
+	}
+
+	return;
+}
+
+/*
+ * cf2tra_list_tree_activate() -
+ */
+void cf2tra_list_tree_abandon( void )
+{
+	if ( TList->root_t )
+		tdestroy(TList->root_t, dummy_func);
+
+	TList->root_t = NULL;
+
+	return;
+}
+
+/*
+ * cf2tra_list_total_channel_get() -
+ */
+int cf2tra_list_total_channel_get( void )
+{
+	DL_NODE *current = NULL;
+	int      result  = 0;
+
+/* */
+	for ( current = (DL_NODE *)TList->entry; current != NULL; current = DL_NODE_GET_NEXT(current) )
+		result++;
+/* */
+	TList->count = result;
+
+	return result;
+}
+
+/*
+ * cf2tra_list_timestamp_get() -
+ */
+time_t cf2tra_list_timestamp_get( void )
+{
+	return TList->timestamp;
+}
+
+/*
+ *
+ */
+#if defined( _USE_SQL )
+/*
+ * fetch_list_sql() - Get stations list from MySQL server
+ */
+static int fetch_list_sql( TraceList *list, const char *table_chan, const DBINFO *dbinfo, const int update )
+{
+	int     result = 0;
+	char    sta[TRACE2_STA_LEN] = { 0 };
+	char    net[TRACE2_NET_LEN] = { 0 };
+	char    loc[TRACE2_LOC_LEN] = { 0 };
+	char    chan[TRACE2_CHAN_LEN] = { 0 };
+	uint8_t rtype;
+	float   cfactor;
+
+	MYSQL_RES *sql_res = NULL;
+	MYSQL_ROW  sql_row;
+
+/* Connect to database */
+	printf("cf2trace: Querying the channels information from MySQL server %s...\n", dbinfo->host);
+	sql_res = dblist_chan_query_sql(
+		dbinfo, table_chan, CF2TRA_INFO_FROM_SQL,
+		COL_CHAN_STATION, COL_CHAN_NETWORK, COL_CHAN_LOCATION,
+		COL_CHAN_CHANNEL, COL_CHAN_RECORD, COL_CHAN_CFACTOR
+	);
+	if ( sql_res == NULL )
+		return -1;
+	printf("cf2trace: Queried the channels information success!\n");
+
+/* Start the SQL server connection for channel */
+	dblist_start_persistent_sql( dbinfo );
+/* Read station list from query result */
+	while ( (sql_row = dblist_fetch_row_sql( sql_res )) != NULL ) {
+	/* */
+		extract_traceinfo_mysql(
+			sta, net, loc, chan, &rtype, &cfactor,
+			sql_row, dblist_fetch_lengths_sql( sql_res )
+		);
+	/* */
+		if (
+			append_traceinfo_list(
+				list, create_new_traceinfo( sta, net, loc, chan, rtype, cfactor ), update
+			) != NULL
+		) {
+			result++;
 		}
 		else {
-			logit ( "e", "cf2trace: Request the shared station list for %s error!\n", _getLists[i].sslist.stalist );
-			return -1;
+			result = -2;
+			break;
 		}
 	}
+/* Close the connection for channel */
+	dblist_close_persistent_sql();
+	dblist_free_result_sql( sql_res );
+	dblist_end_thread_sql();
 
-	for ( i=0; i<_nLists; i++ ) {
-		if ( (slptr = _getLists[i].sslist.slh) != (STALIST_HEADER *)NULL ) {
-		/* Wait for the building process */
-			sslist_wait( &_getLists[i].sslist, SL_READ );
+	if ( result > 0 )
+		logit("o", "cf2trace: Read %d channels information from MySQL server success!\n", result);
+	else
+		logit("e", "cf2trace: Some errors happened when fetching channels information from MySQL server!\n");
 
-		/* Move the pointer to begin of each block */
-			station_blk = (STATION_BLOCK *)(slptr + 1);
-			station_end = (STATION_BLOCK *)((uint8_t *)slptr + station_blk->offset_chaninfo);
-
-		/* Start to parse the information */
-			for ( ; station_blk<station_end; station_blk++ ) {
-			/* Move the pointer to begin of each block */
-				chan_blk = (CHAN_BLOCK *)((uint8_t *)slptr + station_blk->offset_chaninfo);
-
-			/* Deal with the exception when list has some mistake */
-				if ( station_blk->nchannels == 0 ) {
-					logit ( "e", "cf2trace: There isn't any channels information of %s, please check the database!\n", station_blk->sta );
-				}
-				else {
-					for ( j=0; j<station_blk->nchannels; j++, chan_blk++, traceinfo++ ) {
-					/* Allocate the trace information memory */
-						traceinfo = (_TRACEINFO *)calloc(1, sizeof(_TRACEINFO));
-
-						if ( traceinfo == NULL ) {
-							logit( "e", "cf2trace: Error allocate the memory for trace information!\n" );
-							ret = -2;
-							goto except;
-						}
-
-						traceinfo->seq               = chan_blk->seq;
-						traceinfo->recordtype        = chan_blk->recordtype;
-						traceinfo->samprate          = (float)chan_blk->samprate;
-						traceinfo->conversion_factor = (float)chan_blk->conversion_factor;
-
-						strncpy(traceinfo->sta, station_blk->sta, STA_CODE_LEN);
-						strncpy(traceinfo->net, station_blk->net, NET_CODE_LEN);
-						strncpy(traceinfo->loc, station_blk->loc, LOC_CODE_LEN);
-						strncpy(traceinfo->chan, chan_blk->chan, CHAN_CODE_LEN);
-
-					/* Insert the station information into binary tree */
-						if ( tsearch(traceinfo, &root, SCNLCompare) == NULL ) {
-							logit( "e", "cf2trace: Error insert trace into binary tree!\n" );
-							ret = -2;
-							goto except;
-						}
-						traceinfo = NULL;
-
-					/* Counting the total number of traces */
-						count++;
-					}
-				}
-			}
-
-			if ( !_getLists[i].sslist.slh->seq ) Historical = 1;
-			sslist_release( &_getLists[i].sslist, SL_READ );
-		}
-	}
-
-	if ( Historical )
-		logit( "o", "cf2trace: Change from Real-Time Mode to the Historical Event Mode!\n" );
-
-	for ( i=0; i<_nLists; i++ )
-		if ( _getLists[i].sslist.slh != (STALIST_HEADER *)NULL )
-			sslist_detach( &_getLists[i].sslist );
-
-	if ( count ) {
-	/* Switch the tree's root */
-		Root = root;
-	/* Waiting for 500 ms */
-		sleep_ew(500);
-	/* Free the old one */
-		if ( tmproot != (void *)NULL ) tdestroy(tmproot, free);
-
-		logit("o", "cf2trace: Reading %d traces information from shared station list success!\n", count);
-		return count;
-	}
-
-except:
-	if ( traceinfo != (_TRACEINFO *)NULL ) free(traceinfo);
-	tdestroy(root, free);
-
-	return ret;
+	return result;
 }
 
-/*********************************************************************
- *  _FetchTraListFile( ) -- Get Station list from local file.        *
- *  Arguments:                                                       *
- *    _getLists   = Name of list ring.                               *
- *    _nLists     = The module ID of calling process.                *
- *  Returns:                                                         *
- *     0 = Normal.                                                   *
- *********************************************************************/
-static int _FetchTraListFile( GETLISTS *_getLists, const unsigned short _nLists )
+/*
+ * extract_traceinfo_mysql() -
+ */
+static void extract_traceinfo_mysql(
+	char *sta, char *net, char *loc, char *chan, uint16_t *rtype, float *cfactor,
+	const MYSQL_ROW sql_row, const unsigned long row_lengths[]
+) {
+	char _str[32] = { 0 };
+
+/* */
+	dblist_field_extract_sql( sta, TRACE2_STA_LEN, sql_row[0], row_lengths[0] );
+	dblist_field_extract_sql( net, TRACE2_NET_LEN, sql_row[1], row_lengths[1] );
+	dblist_field_extract_sql( loc, TRACE2_LOC_LEN, sql_row[2], row_lengths[2] );
+	dblist_field_extract_sql( chan, TRACE2_CHAN_LEN, sql_row[3], row_lengths[3] );
+	*rtype   = typestr2num( dblist_field_extract_sql( _str, sizeof(_str), sql_row[4], row_lengths[4] ) );
+	*cfactor = atof(dblist_field_extract_sql( _str, sizeof(_str), sql_row[5], row_lengths[5] ));
+
+	return;
+}
+
+#else
+/*
+ * fetch_list_sql() - Fake function
+ */
+static int fetch_list_sql( TraceList *list, const char *table_chan, const DBINFO *dbinfo, const int update )
 {
-	int      ret = 0;
-	uint32_t i;
-	uint32_t count = 0;
-	uint16_t readingstatus = 0;
+	printf(
+		"cf2trace: Skip the process of fetching station list from remote database "
+		"'cause you did not define the _USE_SQL tag when compiling.\n"
+	);
+	return 0;
+}
+#endif
 
-	char line[128];
+/*
+ * init_trace_list() -
+ */
+static TraceList *init_trace_list( void )
+{
+	TraceList *result = (TraceList *)calloc(1, sizeof(TraceList));
 
-	char tmpsta[STA_CODE_LEN];
-	char tmpnet[NET_CODE_LEN];
-	char tmploc[LOC_CODE_LEN];
-	char tmptypestr[TYPE_STR_LEN];
+	if ( result ) {
+		result->count     = 0;
+		result->timestamp = time(NULL);
+		result->entry     = NULL;
+		result->root      = NULL;
+		result->root_t    = NULL;
+	}
 
-	FILE       *fp = NULL;
-	_TRACEINFO *traceinfo = NULL;
+	return result;
+}
 
-	void *root = NULL;
-	void *tmproot = Root;
+/*
+ * destroy_trace_list() -
+ */
+static void destroy_trace_list( TraceList *list )
+{
+	if ( list != (TraceList *)NULL ) {
+	/* */
+		tdestroy(list->root, dummy_func);
+		dl_list_destroy( (DL_NODE **)&list->entry, free );
+		free(list);
+	}
 
+	return;
+}
 
-	for ( i=0; i<_nLists; i++ ) {
-	/* Open list file */
-		if ( (fp = fopen(_getLists[i].slist.stalist, "r")) == NULL ) {
-			logit("e", "cf2trace: Read traces list from local file error!\n");
-			return -1;
-		}
+/*
+ *  append_traceinfo_list() - Appending the new client to the client list.
+ */
+static _TRACEINFO *append_traceinfo_list( TraceList *list, _TRACEINFO *traceinfo, const int update )
+{
+	_TRACEINFO *result = NULL;
+	void      **_root  = update == CF2TRA_LIST_UPDATING ? &list->root : &list->root_t;
 
-	/* Read each line with the stations & channels sequence */
-		while ( fgets( line, sizeof(line) - 1, fp ) != NULL ) {
-			if ( !strlen(line) ) continue;
-
-			for ( i = 0; i < (int)sizeof(line); i++ ) {
-				if ( line[i] == '#' || line[i] == '\n' ) break;
-				else if ( line[i] == '\t' || line[i] == ' ' ) continue;
-				else
-				{
-				/* Station line */
-					if ( readingstatus == 0 ) {
-						if ( sscanf( line, "%*d %hd %s %s %s %*f %*f %*f",
-									&readingstatus,
-									tmpsta,
-									tmpnet,
-									tmploc ) != 4 )
-						{
-							logit( "e", "cf2trace: Read stations information error!\n" );
-							ret = -1;
-							goto except;
-						}
-
-					/* Check the channel number */
-						if ( readingstatus == 0 ) {
-							logit ( "e", "cf2trace: There is not any channels information of %s, please check the list file!\n", tmpsta );
-						}
-					}
-				/* Channel line */
-					else {
-					/* Allocate the trace information memory */
-						traceinfo = (_TRACEINFO *)calloc(1, sizeof(_TRACEINFO));
-
-						if ( traceinfo == NULL ) {
-							logit( "e", "cf2trace: Error allocate the memory for trace information!\n" );
-							ret = -2;
-							goto except;
-						}
-
-						if ( sscanf( line, "%hd %s %s %*s %f %f\n",
-									&traceinfo->seq,
-									tmptypestr,
-									traceinfo->chan,
-									&traceinfo->samprate,
-									&traceinfo->conversion_factor ) != 5 )
-						{
-							logit( "e", "cf2trace: Read %s channels information error!\n", tmpsta );
-							ret = -1;
-							goto except;
-						}
-
-						strncpy(traceinfo->sta, tmpsta, STA_CODE_LEN);
-						strncpy(traceinfo->net, tmpnet, NET_CODE_LEN);
-						strncpy(traceinfo->loc, tmploc, LOC_CODE_LEN);
-						traceinfo->recordtype = typestr2num( tmptypestr );
-
-						count++;
-						readingstatus--;
-
-					/* Insert the trace information into binary tree */
-						if ( tsearch(traceinfo, &root, SCNLCompare) == NULL ) {
-							logit( "e", "cf2trace: Error insert trace into binary tree!\n" );
-							ret = -2;
-							goto except;
-						}
-						traceinfo = NULL;
-					}
-					break;
-				}
+/* */
+	if ( list && traceinfo ) {
+		if ( (result = tfind(traceinfo, _root, compare_scnl)) == NULL ) {
+		/* Insert the station information into binary tree */
+			if ( dl_node_append( (DL_NODE **)&list->entry, traceinfo ) == NULL ) {
+				logit("e", "cf2trace: Error insert channel into linked list!\n");
+				goto except;
+			}
+			if ( (result = tsearch(traceinfo, &list->root_t, compare_scnl)) == NULL ) {
+				logit("e", "cf2trace: Error insert channel into binary tree!\n");
+				goto except;
 			}
 		}
-		fclose(fp);
+		else if ( update == CF2TRA_LIST_UPDATING ) {
+			update_traceinfo( *(_TRACEINFO **)result, traceinfo );
+			if ( (result = tsearch(traceinfo, &list->root_t, compare_scnl)) == NULL ) {
+				logit("e", "cf2trace: Error insert channel into binary tree!\n");
+				goto except;
+			}
+		}
+		else {
+			logit(
+				"o", "cf2trace: SCNL(%s.%s.%s.%s) is already in the list, skip it!\n",
+				traceinfo->sta, traceinfo->chan, traceinfo->net, traceinfo->loc
+			);
+			free( traceinfo );
+		}
 	}
 
-	if ( count ) {
-	/* Switch the tree's root */
-		Root = root;
-	/* Waiting for 500 ms */
-		sleep_ew(500);
-	/* Free the old one */
-		if ( tmproot != (void *)NULL ) tdestroy(tmproot, free);
-
-		logit( "o", "cf2trace: Reading %d traces information success!\n", count );
-		return count;
-	}
-
+	return result ? *(_TRACEINFO **)result : NULL;
+/* Exception handle */
 except:
-	if ( traceinfo != (_TRACEINFO *)NULL ) free(traceinfo);
-	tdestroy(root, free);
-
-	return ret;
+	free(traceinfo);
+	return NULL;
 }
 
-/*************************************************************
- *  TraListFind( ) -- Output the Trace that match the SCNL.  *
- *  Arguments:                                               *
- *    trh2x = Pointer of the trace you want to find.          *
- *  Returns:                                                 *
- *     NULL = Didn't find the trace.                         *
- *    !NULL = The Pointer to the trace.                      *
- *************************************************************/
-_TRACEINFO *TraListFind( TRACE2X_HEADER *trh2x )
-{
-	_TRACEINFO  key;
-	_TRACEINFO *traceptr = NULL;
+/*
+ *  create_new_traceinfo() - Creating new channel info memory space with the input value.
+ */
+static _TRACEINFO *create_new_traceinfo(
+	const char *sta, const char *net, const char *loc, const char *chan, const uint8_t rtype, const float cfactor
+) {
+	_TRACEINFO *result = (_TRACEINFO *)calloc(1, sizeof(_TRACEINFO));
 
-	strcpy(key.sta,  trh2x->sta);
-	strcpy(key.chan, trh2x->chan);
-	strcpy(key.net,  trh2x->net);
-	strcpy(key.loc,  trh2x->loc);
+/* */
+	if ( result )
+		enrich_traceinfo_raw( result, sta, net, loc, chan, rtype, cfactor );
 
-/* Find which trace */
-	if ( (traceptr = tfind(&key, &Root, SCNLCompare)) == NULL ) {
-	/* Not found in trace table */
-		return NULL;
-	}
-
-	traceptr = *(_TRACEINFO **)traceptr;
-
-	return traceptr;
+	return result;
 }
 
-/**********************************************************************
- *  SCNLCompare( )  the SCNL compare function of binary tree search   *
- **********************************************************************/
-static int SCNLCompare( const void *a, const void *b )
-{
-	int rc;
-	_TRACEINFO *tmpa, *tmpb;
+/*
+ *
+ */
+static _TRACEINFO *enrich_traceinfo_raw(
+	_TRACEINFO *traceinfo, const char *sta, const char *net, const char *loc, const char *chan,
+	const uint8_t rtype, const float cfactor
+) {
+/* */
+	memcpy(traceinfo->sta, sta, TRACE2_STA_LEN);
+	memcpy(traceinfo->net, net, TRACE2_NET_LEN);
+	memcpy(traceinfo->loc, loc, TRACE2_LOC_LEN);
+	memcpy(traceinfo->chan, chan, TRACE2_CHAN_LEN);
+	traceinfo->seq = 0;
+	traceinfo->recordtype = rtype;
+	traceinfo->conversion_factor = cfactor;
 
-	tmpa = (_TRACEINFO *)a;
-	tmpb = (_TRACEINFO *)b;
-
-	rc = strcmp( tmpa->sta, tmpb->sta );
-	if ( rc != 0 ) return rc;
-	rc = strcmp( tmpa->chan, tmpb->chan );
-	if ( rc != 0 ) return rc;
-	rc = strcmp( tmpa->net, tmpb->net );
-	if ( rc != 0 ) return rc;
-	rc = strcmp( tmpa->loc, tmpb->loc );
-	return rc;
+	return traceinfo;
 }
 
-
-/*************************************************
- *  EndTraList( ) -- End process of Trace list.  *
- *  Arguments:                                   *
- *    None.                                      *
- *  Returns:                                     *
- *    None.                                      *
- *************************************************/
-void TraListEnd( void )
+/*
+ * update_traceinfo()
+ */
+static _TRACEINFO *update_traceinfo( _TRACEINFO *dest, const _TRACEINFO *src )
 {
-	tdestroy(Root, free);
-	if ( RingSwitch ) sslist_end();
+/* */
+	dest->seq = src->seq;
+	dest->recordtype = src->recordtype;
+	dest->conversion_factor = src->conversion_factor;
 
+	return dest;
+}
+
+/*
+ * compare_scnl() - the SCNL compare function of binary tree search
+ */
+static int compare_scnl( const void *a, const void *b )
+{
+	_TRACEINFO *tmpa = (_TRACEINFO *)a;
+	_TRACEINFO *tmpb = (_TRACEINFO *)b;
+	int         rc;
+
+	if ( (rc = strcmp(tmpa->sta, tmpb->sta)) != 0 )
+		return rc;
+	if ( (rc = strcmp(tmpa->chan, tmpb->chan)) != 0 )
+		return rc;
+	if ( (rc = strcmp(tmpa->net, tmpb->net)) != 0 )
+		return rc;
+	return strcmp(tmpa->loc, tmpb->loc);
+}
+
+/*
+ * dummy_func() -
+ */
+static void dummy_func( void *node )
+{
 	return;
 }
