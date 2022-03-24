@@ -263,7 +263,7 @@ static int fetch_list_sql( TraceList *list, const char *table_chan, const DBINFO
  * extract_traceinfo_mysql() -
  */
 static void extract_traceinfo_mysql(
-	char *sta, char *net, char *loc, char *chan, uint16_t *rtype, float *cfactor,
+	char *sta, char *net, char *loc, char *chan, uint8_t *rtype, float *cfactor,
 	const MYSQL_ROW sql_row, const unsigned long row_lengths[]
 ) {
 	char _str[32] = { 0 };

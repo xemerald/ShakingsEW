@@ -647,7 +647,7 @@ static thr_ret thread_update_list( void *arg )
 /* */
 	for ( i = 0; i < nList; i++ ) {
 		if ( cf2tra_list_db_fetch( SQLChannelTable[i], &DBInfo, CF2TRA_LIST_UPDATING ) < 0 ) {
-			logit("e", "cf2trace: Fetching channels list from remote database error!\n", SQLChannelTable[i]);
+			logit("e", "cf2trace: Fetching channels list(%s) from remote database error!\n", SQLChannelTable[i]);
 			update_flag = 1;
 		}
 	}
@@ -660,11 +660,11 @@ static thr_ret thread_update_list( void *arg )
 	if ( update_flag ) {
 		cf2tra_list_tree_abandon();
 		logit("e", "cf2trace: Failed to update the channels list!\n");
-		logit("ot", "cf2trace: Keep using the previous channels list(%.6lf)!\n", cf2tra_list_timestamp_get());
+		logit("ot", "cf2trace: Keep using the previous channels list(%ld)!\n", cf2tra_list_timestamp_get());
 	}
 	else {
 		cf2tra_list_tree_activate();
-		logit("ot", "cf2trace: Successfully updated the channels list(%.6lf)!\n", cf2tra_list_timestamp_get());
+		logit("ot", "cf2trace: Successfully updated the channels list(%ld)!\n", cf2tra_list_timestamp_get());
 		logit(
 			"ot", "cf2trace: There are total %d channels in the new channels list.\n", cf2tra_list_total_channel_get()
 		);
