@@ -28,7 +28,7 @@
 /*--------------------------------------------------------*
  * Definition of trace peak value, total size is 40 bytes *
  *--------------------------------------------------------*/
-#define TRACE_PEAKVALUE_SIZE  40
+#define TRACE_PEAKVALUE_SIZE  48
 
 typedef struct {
 	char sta[TRACE2_STA_LEN];   /* Site name (NULL-terminated) */
@@ -36,9 +36,9 @@ typedef struct {
 	char loc[TRACE2_LOC_LEN];   /* Location code (NULL-terminated) */
 	char chan[TRACE2_CHAN_LEN]; /* Component/channel code (NULL-terminated) */
 
-	uint16_t recordtype;      /* Flag for record type   */
+	uint8_t  padding[6];      /*  */
 	uint8_t  sourcemod;       /* Come from which module */
-	uint8_t  padding;         /*  */
+	uint16_t recordtype;      /* Flag for record type   */
 	double   peakvalue;       /* Peak value in this trace */
 	double   peaktime;        /* Time of peak sample in epoch seconds */
 } TRACE_PEAKVALUE;
