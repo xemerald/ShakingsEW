@@ -1,13 +1,10 @@
 MODULES = \
 	cf2trace \
 	dif2trace \
-	palert2ew \
-	palertana \
 	peak2trig \
 	postshake \
 	respectra \
 	shakemap \
-	stalist2ew \
 	shake2ws \
 	trace2peak
 

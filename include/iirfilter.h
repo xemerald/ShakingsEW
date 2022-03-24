@@ -1,12 +1,4 @@
 /*
- *     Revision history:
- *
- *     Revision 1.0  2019/01/19 17:36:50  Benjamin Yang
- *     Initial revision
- *
- */
-
-/*
  * iirfilter.h
  *
  * Header file for IIR filter related functions & data.

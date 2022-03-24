@@ -8,12 +8,9 @@
 #
 MODULES="cf2trace \
 	dif2trace \
-	palert2ew \
-	palertana \
 	peak2trig \
 	postshake \
 	shakemap \
-	stalist2ew \
 	shake2ws \
 	trace2peak"
 

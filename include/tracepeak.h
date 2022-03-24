@@ -22,7 +22,7 @@
 #pragma once
 
 #include <stdint.h>
-#include <stalist.h>
+#include <trace_buf.h>
 
 
 /*--------------------------------------------------------*
@@ -31,10 +31,10 @@
 #define TRACE_PEAKVALUE_SIZE  40
 
 typedef struct {
-	char sta[STA_CODE_LEN];   /* Site name (NULL-terminated) */
-	char net[NET_CODE_LEN];   /* Network name (NULL-terminated) */
-	char loc[LOC_CODE_LEN];   /* Location code (NULL-terminated) */
-	char chan[CHAN_CODE_LEN]; /* Component/channel code (NULL-terminated) */
+	char sta[TRACE2_STA_LEN];   /* Site name (NULL-terminated) */
+	char net[TRACE2_NET_LEN];   /* Network name (NULL-terminated) */
+	char loc[TRACE2_LOC_LEN];   /* Location code (NULL-terminated) */
+	char chan[TRACE2_CHAN_LEN]; /* Component/channel code (NULL-terminated) */
 
 	uint16_t recordtype;      /* Flag for record type   */
 	uint8_t  sourcemod;       /* Come from which module */

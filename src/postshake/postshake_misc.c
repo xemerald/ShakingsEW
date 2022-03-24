@@ -9,8 +9,9 @@
 #include <postshake.h>
 
 /*
-*/
-GRIDMAP_HEADER *GetRefGridmap( const PLOTSMAP *psm )
+ *
+ */
+GRIDMAP_HEADER *psk_misc_refmap_get( const PLOTSMAP *psm )
 {
 	int i;
 	GRIDMAP_HEADER *result = NULL;
@@ -29,12 +30,13 @@ GRIDMAP_HEADER *GetRefGridmap( const PLOTSMAP *psm )
 }
 
 /*
-*/
-int GetTrigStations( const PLOTSMAP *psm )
+ *
+ */
+int psk_misc_trigstations_get( const PLOTSMAP *psm )
 {
 	int result = 0;
 
-	GRIDMAP_HEADER *gmh = GetRefGridmap( psm );
+	GRIDMAP_HEADER *gmh = psk_misc_refmap_get( psm );
 
 	if ( gmh == NULL ) return result;
 
@@ -48,12 +50,13 @@ int GetTrigStations( const PLOTSMAP *psm )
 	return result;
 }
 
-/*************************************************************
- *  GenSmapFilename( )  According to the griddata generate a string for result file name *
- *************************************************************/
-char *GenSmapFilename( const PLOTSMAP *psm, char *dest, size_t strlength )
+/*
+ * psk_misc_smfilename_gen() - According to the griddata generate a string for result
+ *                             file name
+ */
+char *psk_misc_smfilename_gen( const PLOTSMAP *psm, char *dest, size_t strlength )
 {
-	GRIDMAP_HEADER *gmh = GetRefGridmap( psm );
+	GRIDMAP_HEADER *gmh = psk_misc_refmap_get( psm );
 	struct tm      *tp = NULL;
 
 	char _rstring[MAX_STR_SIZE];

@@ -1,12 +1,4 @@
 /*
- *     Revision history:
- *
- *     Revision 1.0  2018/11/16 13:23:20  Benjamin Yang
- *     Initial revision
- *
- */
-
-/*
  * geogfunc.h
  *
  * Header file for geographical related functions.

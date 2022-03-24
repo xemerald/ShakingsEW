@@ -36,12 +36,11 @@ static void postshake_status( unsigned char, short, char * );
 static void postshake_end( void );  /* Free all the local memory & close socket */
 
 static thr_ret thread_proc_shake( void * );
-static thr_ret SendShakeMail( void * );
-static thr_ret PlotShakemap_thr( void * );
+static thr_ret thread_send_mail( void * );
+static thr_ret thread_plot_shakemap( void * );
 
-static int  WriteShakeMail( const PLOTSMAP *, const int );
-static void RemoveShakemap( const char *, const char * );
-
+static int   write_mail_content( const PLOTSMAP *, const int );
+static void  remove_shakemap( const char *, const char * );
 static char *gen_script_command_args( char *, const PLOTSMAP * );
 
 static SHM_INFO Region;      /* shared memory region to use for i/o    */
@@ -158,7 +157,7 @@ int main( int argc, char **argv )
 /* Create a Mutex to control access to queue & initialize the message queue */
 	/* CreateSemaphore_ew(); */ /* Obsoleted by Earthworm */
 	SemaPtr = CreateSpecificSemaphore_ew( 0 );
-	MsgQueueInit( QueueSize, MAX_GRIDMAP_SIZ + 1 );
+	psk_msgqueue_init( QueueSize, MAX_GRIDMAP_SIZ + 1 );
 
 /* Initialization */
 	gmbuffer = (GRIDMAP_HEADER *)malloc(MAX_GRIDMAP_SIZ);
@@ -245,7 +244,7 @@ int main( int argc, char **argv )
 				if ( ((gmbuffer->endtime - gmbuffer->starttime) % IssueInterval ) && !gmbuffer->codaflag )
 					break;
 
-				res = MsgEnqueue( gmbuffer, recsize, reclogo );
+				res = psk_msgqueue_enqueue( gmbuffer, recsize, reclogo );
 				/* PostSemaphore(); */ /* Obsoleted by Earthworm */
 				PostSpecificSemaphore_ew( SemaPtr );
 				if ( res ) {
@@ -474,7 +473,7 @@ static void postshake_config( char *configfile )
 				for ( i = 0; i < 4; i++ )
 					range[i] = k_val();
 
-				PlotInit( range[0], range[1], range[2], range[3] );
+				psk_plot_init( range[0], range[1], range[2], range[3] );
 				init[7] = 1;
 			}
 			else if ( k_its("IssueInterval") ) {
@@ -487,7 +486,7 @@ static void postshake_config( char *configfile )
 					strcpy(plfilename, str);
 				logit("o", "postshake: Normal polygon line file: %s\n", plfilename);
 
-				if ( PlotReadPolyLine( plfilename, PLOT_NORMAL_POLY ) ) {
+				if ( psk_plot_polyline_read( plfilename, PLOT_NORMAL_POLY ) ) {
 					logit("e", "postshake: Error reading normal polygon line file; exiting!\n");
 					exit(-1);
 				}
@@ -501,7 +500,7 @@ static void postshake_config( char *configfile )
 					strcpy(plfilename, str);
 				logit("o", "postshake: Strong polygon line file: %s\n", plfilename);
 
-				if ( PlotReadPolyLine( plfilename, PLOT_STRONG_POLY ) ) {
+				if ( psk_plot_polyline_read( plfilename, PLOT_STRONG_POLY ) ) {
 					logit("e", "postshake: Error reading strong polygon line file; exiting!\n");
 					exit(-1);
 				}
@@ -753,8 +752,8 @@ static void postshake_status( unsigned char type, short ierr, char *note )
 static void postshake_end( void )
 {
 	tport_detach( &Region );
-	PlotEnd();
-	MsgQueueEnd();
+	psk_plot_end();
+	psk_msgqueue_end();
 	/* DestroySemaphore(); */ /* Obsoleted by Earthworm */
 	DestroySpecificSemaphore_ew( SemaPtr );
 
@@ -803,7 +802,7 @@ static thr_ret thread_proc_shake( void *dummy )
 		/* WaitSemPost(); */ /* Obsoleted by Earthworm */
 		WaitSpecificSemaphore_ew(SemaPtr);
 
-		res = MsgDequeue( gmtmp, &recsize, &reclogo );
+		res = psk_msgqueue_dequeue( gmtmp, &recsize, &reclogo );
 
 		if ( res == 0 ) {
 			for ( i = 0; i < nLogo; i++ ) {
@@ -814,7 +813,7 @@ static thr_ret thread_proc_shake( void *dummy )
 							gmref = gmbuffer[i];
 					}
 					else {
-						if ( (res = MsgEnqueue( gmtmp, recsize, reclogo )) ) {
+						if ( (res = psk_msgqueue_enqueue( gmtmp, recsize, reclogo )) ) {
 							if ( res == -3 )
 								logit("et", "postshake: ProcessShake's circular queue lapped. Messages lost!\n");
 						}
@@ -826,29 +825,30 @@ static thr_ret thread_proc_shake( void *dummy )
 
 		if ( nready == nLogo ) {
 		/* Basically, we use the first ref. value of the first one plotting shakemap as the base */
-			if ( (gmref = GetRefGridmap( PlotShakeMaps )) == NULL ) {
-				logit( "e", "postshake: Can't find the grid reference in the first plotting shakemap!\n" );
+			if ( (gmref = psk_misc_refmap_get( PlotShakeMaps )) == NULL ) {
+				logit("e", "postshake: Can't find the grid reference in the first plotting shakemap!\n");
 				exit(-1);
 			}
 		/* And get the maximum magnitude */
 			for ( i = 0; i < 4; i++ )
-				if ( gmref->magnitude[i] > max_mag ) max_mag = gmref->magnitude[i];
+				if ( gmref->magnitude[i] > max_mag )
+					max_mag = gmref->magnitude[i];
 
 		/* Generate the plotting function's threads */
-			if ( StartThread( PlotShakemap_thr, (unsigned)THREAD_STACK, &tid[0] ) == -1 ) {
-				logit( "e", "postshake: Error starting PlotShakemap_thr thread!\n");
+			if ( StartThread( thread_plot_shakemap, (unsigned)THREAD_STACK, &tid[0] ) == -1 ) {
+				logit("e", "postshake: Error starting PlotShakemap_thr thread!\n");
 			}
 			PlotMapStatus = THREAD_ALIVE;
 
 		/* Processing the alert Email */
 			if ( strlen( EmailProgram ) > 0 && NumEmailRecipients ) {
 			/* Write the content of Email */
-				if ( WriteShakeMail( PlotShakeMaps, NumPlotShakeMaps ) < 0 ) {
-					logit( "e", "postshake: Error writing the content of alert mail!\n");
+				if ( write_mail_content( PlotShakeMaps, NumPlotShakeMaps ) < 0 ) {
+					logit("e", "postshake: Error writing the content of alert mail!\n");
 				}
 			/* Send the alert Email */
-				if ( StartThreadWithArg( SendShakeMail, gmref, (unsigned)THREAD_STACK, &tid[1] ) == -1 ) {
-					logit( "e", "postshake: Error starting SendShakeMail thread!\n");
+				if ( StartThreadWithArg( thread_send_mail, gmref, (unsigned)THREAD_STACK, &tid[1] ) == -1 ) {
+					logit("e", "postshake: Error starting SendShakeMail thread!\n");
 				}
 				MailProcessStatus = THREAD_ALIVE;
 			}
@@ -862,13 +862,13 @@ static thr_ret thread_proc_shake( void *dummy )
 		 	gen_script_command_args( script_args, PlotShakeMaps );
 			for ( i = 0; i < NumPostScripts; i++ ) {
 				if ( PostScripts[i].min_magnitude <= max_mag ) {
-					logit( "o", "postshake: Executing the script: '%s'\n", PostScripts[i].script );
+					logit("o", "postshake: Executing the script: '%s'\n", PostScripts[i].script);
 					sprintf(command, "%s %s", PostScripts[i].script, script_args);
 				/* Execute system command to post shakemap */
 					if ( system(command) )
-						logit( "e", "postshake: Execute the script: '%s' error, please check it!\n", PostScripts[i].script );
+						logit("e", "postshake: Execute the script: '%s' error, please check it!\n", PostScripts[i].script);
 					else
-						logit( "t", "postshake: Execute the script: '%s' success!\n", PostScripts[i].script );
+						logit("t", "postshake: Execute the script: '%s' success!\n", PostScripts[i].script);
 				}
 			}
 
@@ -880,8 +880,8 @@ static thr_ret thread_proc_shake( void *dummy )
 		/* Remove the plotted shakemaps */
 			if ( RemoveSwitch ) {
 				for ( i = 0; i < NumPlotShakeMaps; i++ ) {
-					GenSmapFilename( PlotShakeMaps + i, script_args, MAX_STR_SIZE );
-					RemoveShakemap( ReportPath, script_args );
+					psk_misc_smfilename_gen( PlotShakeMaps + i, script_args, MAX_STR_SIZE );
+					remove_shakemap( ReportPath, script_args );
 				}
 			}
 
@@ -907,7 +907,7 @@ static thr_ret thread_proc_shake( void *dummy )
 
 /*
 */
-static int WriteShakeMail( const PLOTSMAP *psm, const int numofpsm )
+static int write_mail_content( const PLOTSMAP *psm, const int numofpsm )
 {
 	int    i;
 	int    trigstations = -1;
@@ -917,7 +917,7 @@ static int WriteShakeMail( const PLOTSMAP *psm, const int numofpsm )
 	char   etimestring[MAX_DSTR_LENGTH];
 
 	FILE            *htmlfile;                      /* HTML file */
-	GRIDMAP_HEADER  *gmref = GetRefGridmap( psm );
+	GRIDMAP_HEADER  *gmref = psk_misc_refmap_get( psm );
 
 /* Open the temporary header file */
 	if( (htmlfile = fopen( "postshake_mail_html.tmp", "w" )) != NULL ) {
@@ -928,7 +928,7 @@ static int WriteShakeMail( const PLOTSMAP *psm, const int numofpsm )
 		date2spstring( tp, etimestring, MAX_DSTR_LENGTH );
 
 	/* Get the triggered stations */
-		trigstations = GetTrigStations( psm );
+		trigstations = psk_misc_trigstations_get( psm );
 
 		fprintf( htmlfile, "<!DOCTYPE html>\n" );
 		fprintf( htmlfile, "<html>\n<body>\n" );
@@ -944,7 +944,7 @@ static int WriteShakeMail( const PLOTSMAP *psm, const int numofpsm )
 	/* Extra content about ftp */
 		for ( i = 0; i < numofpsm; i++ ) {
 		/* Generate file name */
-			GenSmapFilename( psm + i, resfilename, MAX_STR_SIZE );
+			psk_misc_smfilename_gen( psm + i, resfilename, MAX_STR_SIZE );
 			fprintf(htmlfile, "<p><a href=\'%sshakemap/img/%s\'><b>Download \"%s\"</b></a></p>\n",
 				LinkURLPrefix, resfilename, (psm + i)->title);
 		}
@@ -963,7 +963,7 @@ static int WriteShakeMail( const PLOTSMAP *psm, const int numofpsm )
 
 /*
 */
-static thr_ret SendShakeMail( void *arg )
+static thr_ret thread_send_mail( void *arg )
 {
 	int i;
 
@@ -1029,7 +1029,7 @@ static thr_ret SendShakeMail( void *arg )
 
 /*
 */
-static thr_ret PlotShakemap_thr( void *dummy )
+static thr_ret thread_plot_shakemap( void *dummy )
 {
 	int  i;
 	char resfilename[MAX_STR_SIZE];
@@ -1038,9 +1038,9 @@ static thr_ret PlotShakemap_thr( void *dummy )
 
 	for ( i = 0; i < NumPlotShakeMaps; i++ ) {
 	/* Generate the result file name */
-		GenSmapFilename( PlotShakeMaps + i, resfilename, MAX_STR_SIZE );
+		psk_misc_smfilename_gen( PlotShakeMaps + i, resfilename, MAX_STR_SIZE );
 	/* Plot the shakemap by the plotting functions like PGPLOT or GMT etc. */
-		if ( PlotShakemap( PlotShakeMaps + i, ReportPath, resfilename ) < 0 ) {
+		if ( psk_plot_sm_plot( PlotShakeMaps + i, ReportPath, resfilename ) < 0 ) {
 			logit( "e", "postshake: Plotting shakemap error; skip it!\n" );
 		}
 	}
@@ -1054,7 +1054,7 @@ static thr_ret PlotShakemap_thr( void *dummy )
 
 /*
 */
-static void RemoveShakemap( const char *reportpath, const char *resfilename )
+static void remove_shakemap( const char *reportpath, const char *resfilename )
 {
 	char fullfilepath[MAX_PATH_STR*2];
 
@@ -1070,7 +1070,7 @@ static void RemoveShakemap( const char *reportpath, const char *resfilename )
 static char *gen_script_command_args( char *buffer, const PLOTSMAP *psm )
 {
 	int             i;
-	GRIDMAP_HEADER *gmref   = GetRefGridmap( psm );
+	GRIDMAP_HEADER *gmref   = psk_misc_refmap_get( psm );
 	double          max_mag = DUMMY_MAG;
 	struct tm      *tp      = NULL;
 	char            filename[MAX_PATH_STR];
@@ -1091,11 +1091,11 @@ static char *gen_script_command_args( char *buffer, const PLOTSMAP *psm )
 
 /* Command arguments for executing script */
 	sprintf(
-		buffer, "%s %s %ld %f %d ", starttime, endtime, reptime, max_mag, GetTrigStations( psm )
+		buffer, "%s %s %ld %f %d ", starttime, endtime, reptime, max_mag, psk_misc_trigstations_get( psm )
 	);
 /* Generate the result file names */
 	for ( i = 0; i < NumPlotShakeMaps; i++ ) {
-		GenSmapFilename( psm + i, filename, MAX_STR_SIZE );
+		psk_misc_smfilename_gen( psm + i, filename, MAX_STR_SIZE );
 		strcat(buffer, ReportPath);
 		strcat(buffer, filename);
 		strcat(buffer, " ");

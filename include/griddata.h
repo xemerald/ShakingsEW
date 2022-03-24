@@ -1,15 +1,4 @@
 /*
- *     Revision history:
- *
- *     Revision 1.1  2020/03/13 18:53:15  Benjamin Yang
- *     Change MAP_TYPE to EVALUATE_TYPE.
- *
- *     Revision 1.0  2018/12/25 17:36:50  Benjamin Yang
- *     Initial revision.
- *
- */
-
-/*
  * griddata.h
  *
  * Header file for grid map data.

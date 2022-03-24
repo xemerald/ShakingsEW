@@ -29,15 +29,14 @@ typedef struct {
 	GRID_REC *gridptr[MAX_IN_MSG];
 } FUSION_GRID;
 
-static int  _PlotShakemapPGPLOT( void *, const char *, const char * );
-static int  PlotLinkFusionGrid( const void *, FUSION_GRID **, FUSION_GRID ** );
-static void PlotFancyBaseMap( const float, const float, const float, const float, const char *, const char *, const char * );
-static void PlotColorbar( const float, const float, const short );
-static void PlotGridLine( const float, const float, const float, const float );
-static void PlotMapGrid( const FUSION_GRID *, const short );
-//static void PlotMapGrid( const float, const float, const double, const short );
-
-static void FreePolyLines( POLY_LINE * );
+static int  plot_shakemap_pgplot( void *, const char *, const char * );
+static int  link_fusion_grid( const void *, FUSION_GRID **, FUSION_GRID ** );
+static void plot_basemap_fancy( const float, const float, const float, const float, const char *, const char *, const char * );
+static void plot_colorbar( const float, const float, const short );
+static void plot_gridline( const float, const float, const float, const float );
+static void plot_mapgrids( const FUSION_GRID *, const short );
+//static void plot_mapgrids( const float, const float, const double, const short );
+static void free_polyline( POLY_LINE * );
 
 static float      MapRange[4];
 static POLY_LINE *NormalPLine = NULL;
@@ -65,16 +64,16 @@ static const float ColorIndexDeca[][3] = { { 0.8549, 1.0000, 0.8196 },
 
 
 
-/*********************************************************************
- *  PlotInit( ) -- Initialization function of Plotting.       *
- *  Arguments:                                                       *
- *    ringName   = Name of list ring.                                *
- *    modId      = The module ID of calling process.                 *
- *    ringSwitch = The switch for getting list from ring.            *
- *  Returns:                                                         *
- *     0 = Normal.                                                   *
- *********************************************************************/
-int PlotInit( const float minlon, const float maxlon, const float minlat, const float maxlat )
+/*
+ * psk_plot_init( ) -- Initialization function of Plotting.
+ * Arguments:
+ *   ringName   = Name of list ring.
+ *   modId      = The module ID of calling process.
+ *   ringSwitch = The switch for getting list from ring.
+ * Returns:
+ *    0 = Normal.
+ */
+int psk_plot_init( const float minlon, const float maxlon, const float minlat, const float maxlat )
 {
 	int result;
 
@@ -96,20 +95,127 @@ int PlotInit( const float minlon, const float maxlon, const float minlat, const 
 	return result;
 }
 
-/******************************************************************************
- * PlotShakemap() Read the station info from the array <stainfo>. And creates *
- *              the table of postshake of Taiwan.                             *
- ******************************************************************************/
-int PlotShakemap( void *psm, const char *reportPath, const char *resfilename )
+/*
+ * psk_plot_sm_plot() - Read the station info from the array <stainfo>. And creates
+ *                      the table of postshake of Taiwan.
+ */
+int psk_plot_sm_plot( void *psm, const char *reportPath, const char *resfilename )
 {
-	return _PlotShakemapPGPLOT( psm, reportPath, resfilename );
+	return plot_shakemap_pgplot( psm, reportPath, resfilename );
 }
 
-/******************************************************************************
- * _PlotShakemapPGPLOT() Read the station info from the array <stainfo>. And creates *
- *              the table of postshake of Taiwan.                             *
- ******************************************************************************/
-static int _PlotShakemapPGPLOT( void *psm, const char *reportpath, const char *resfilename )
+/*
+ *
+ */
+int psk_plot_polyline_read( const char *plfilename, int plinetype )
+{
+	int    i;
+	int    pointcount;
+	float *tmp_x = NULL;
+	float *tmp_y = NULL;
+	char   line[MAX_STR_SIZE];
+
+	FILE      *fd;
+	POLY_LINE *newpl  = NULL;
+	POLY_LINE **plptr = NULL;
+
+/* Initialization */
+	tmp_x = calloc(60000, sizeof(float));
+	tmp_y = calloc(60000, sizeof(float));
+
+	if ( tmp_x == NULL || tmp_y == NULL ) {
+		logit( "e", "postshake: Error allocate temporary memory for polygon line!\n" );
+		return -1;
+	}
+
+	memset(line, 0, sizeof(line));
+
+	if ( (fd = fopen(plfilename, "r")) == NULL ) {
+		logit( "e", "postshake: Error opening polygon line file %s!\n", plfilename );
+		return -1;
+	}
+
+	switch ( plinetype ) {
+	case PLOT_NORMAL_POLY:
+		plptr = &NormalPLine;
+		break;
+	case PLOT_STRONG_POLY:
+		plptr = &StrongPLine;
+		break;
+	default:
+		logit( "e", "postshake: Unknown type ot polygon line!\n" );
+		return -2;
+	}
+
+	while ( *plptr != NULL ) plptr = &(*plptr)->next;
+	pointcount = 0;
+
+	while ( fgets(line, sizeof(line) - 1, fd) != NULL ) {
+		if ( !strlen(line) ) continue;
+
+		for ( i = 0; i < MAX_STR_SIZE; i++ ) {
+			if ( line[i] == '#' || line[i] == '\n' ) break;
+			else if ( line[i] == '\t' || line[i] == ' ' ) continue;
+			else if ( line[i] == '>' ) {
+				if ( pointcount > 0 ) {
+					if ( (newpl = calloc(1, sizeof(POLY_LINE))) == NULL ) {
+						logit( "e", "postshake: Error allocate memory for polygon line!\n" );
+						free_polyline( *plptr );
+						return -1;
+					}
+					newpl->points = pointcount;
+					newpl->x      = calloc(pointcount + 1, sizeof(float));
+					newpl->y      = calloc(pointcount + 1, sizeof(float));
+					newpl->next   = NULL;
+					memcpy(newpl->x, tmp_x, pointcount*sizeof(float));
+					memcpy(newpl->y, tmp_y, pointcount*sizeof(float));
+
+					*plptr = newpl;
+					plptr  = &(*plptr)->next;
+				}
+				else break;
+
+				pointcount = 0;
+			}
+			else {
+				if ( sscanf( line, "%f %f", tmp_x + pointcount, tmp_y + pointcount ) != 2 ) {
+					logit( "e", "postshake: Error reading boundary file %s!\n", plfilename );
+					free_polyline( *plptr );
+					return -1;
+				}
+				else pointcount++;
+			}
+			break;
+		}
+	}
+
+	fclose(fd);
+	free(tmp_x);
+	free(tmp_y);
+
+	return 0;
+}
+
+/*
+ * psk_plot_end( ) -- End process of plot
+ * Arguments:
+ *   None.
+ * Returns:
+ *   None.
+ */
+void psk_plot_end( void )
+{
+	free_polyline( NormalPLine );
+	free_polyline( StrongPLine );
+
+	return;
+}
+
+/*
+ * plot_shakemap_pgplot() Read the station info from the array <stainfo>. And creates
+ *              the table of postshake of Taiwan.
+ */
+static int plot_shakemap_pgplot( void *psm, const char *reportpath, const char *resfilename )
 {
 	int i, trigstations = 0;
 
@@ -132,7 +238,7 @@ static int _PlotShakemapPGPLOT( void *psm, const char *reportpath, const char *r
 	char etimestring[MAX_DSTR_LENGTH];
 
 /* Start plotting the shakemap */
-	if ( (gmh = GetRefGridmap( psmptr )) == NULL ) {
+	if ( (gmh = psk_misc_refmap_get( psmptr )) == NULL ) {
 		logit( "e", "postshake: Can't find the grid data in the plotting shakemap structure!\n" );
 		return -1;
 	}
@@ -158,17 +264,17 @@ static int _PlotShakemapPGPLOT( void *psm, const char *reportpath, const char *r
 	cpgscr(COLOR_INDEX_LGRAY, 0.9, 0.9, 0.9);
 
 	switch ( shake_get_maxintensity( psmptr->smaptype ) ) {
-		case SHAKE_INT_X:
-			for ( i=0; i<10; i++ ) {
-				cpgscr(COLOR_INDEX_BASE + i, ColorIndexDeca[i][0], ColorIndexDeca[i][1], ColorIndexDeca[i][2]);
-			}
-			break;
-		case SHAKE_INT_VIII:
-		default:
-			for ( i=0; i<8; i++ ) {
-				cpgscr(COLOR_INDEX_BASE + i, ColorIndexOcta[i][0], ColorIndexOcta[i][1], ColorIndexOcta[i][2]);
-			}
-			break;
+	case SHAKE_INT_X:
+		for ( i=0; i<10; i++ ) {
+			cpgscr(COLOR_INDEX_BASE + i, ColorIndexDeca[i][0], ColorIndexDeca[i][1], ColorIndexDeca[i][2]);
+		}
+		break;
+	case SHAKE_INT_VIII:
+	default:
+		for ( i=0; i<8; i++ ) {
+			cpgscr(COLOR_INDEX_BASE + i, ColorIndexOcta[i][0], ColorIndexOcta[i][1], ColorIndexOcta[i][2]);
+		}
+		break;
 	}
 
 	cpgpap(30, scaler);
@@ -178,29 +284,29 @@ static int _PlotShakemapPGPLOT( void *psm, const char *reportpath, const char *r
 	cpgsci(COLOR_INDEX_FG);
 	cpgslw(8);
 	cpgsch(1.0);
-	PlotFancyBaseMap(MapRange[0], MapRange[1], MapRange[2], MapRange[3], "Longitude(\260E)", "Latitude(\260N)", tmpstring);
+	plot_basemap_fancy(MapRange[0], MapRange[1], MapRange[2], MapRange[3], "Longitude(\260E)", "Latitude(\260N)", tmpstring);
 
 /* The plain style map frame */
 	//cpgenv(MapRange[0], MapRange[1], MapRange[2], MapRange[3], 1, 1);
 	//cpglab("Longitude(\260E)", "Latitude(\260N)", tmpstring);
 
 	fmgrid = fsgrid = NULL;
-	trigstations = PlotLinkFusionGrid( psmptr, &fmgrid, &fsgrid );
+	trigstations = link_fusion_grid( psmptr, &fmgrid, &fsgrid );
 	if ( fmgrid == NULL || fsgrid == NULL || trigstations == 0 ) {
 		logit( "e", "postshake: Parsing grid data error, please check the data source!\n" );
 		return -1;
 	}
 /* */
 	for ( fgp = fmgrid, fge = fgp + (gmh->totalgrids - trigstations); fgp < fge; fgp++ )
-		PlotMapGrid( fgp, psmptr->smaptype );
+		plot_mapgrids( fgp, psmptr->smaptype );
 
 	cpgslw(3);
 	cpgsci(COLOR_INDEX_LGRAY);
 /* Plotting the grid line on the map */
-	PlotGridLine( MapRange[0], MapRange[1], MapRange[2], MapRange[3] );
+	plot_gridline( MapRange[0], MapRange[1], MapRange[2], MapRange[3] );
 
 /* Drawing the colorbar */
-	PlotColorbar( colorbarpos[0], colorbarpos[1], psmptr->smaptype );
+	plot_colorbar( colorbarpos[0], colorbarpos[1], psmptr->smaptype );
 
 /* Drawing normal polygon line */
 	cpgslw(5);
@@ -257,7 +363,10 @@ static int _PlotShakemapPGPLOT( void *psm, const char *reportpath, const char *r
 	return trigstations;
 }
 
-static void PlotFancyBaseMap( const float minlon, const float maxlon, const float minlat, const float maxlat, const char *xlab, const char *ylab, const char *title )
+/*
+ *
+ */
+static void plot_basemap_fancy( const float minlon, const float maxlon, const float minlat, const float maxlat, const char *xlab, const char *ylab, const char *title )
 {
 /* Frame related variables */
 	const float width = 0.032;
@@ -339,8 +448,9 @@ static void PlotFancyBaseMap( const float minlon, const float maxlon, const floa
 }
 
 /*
-*/
-static int PlotLinkFusionGrid( const void *psm, FUSION_GRID **fgm, FUSION_GRID **fgs )
+ *
+ */
+static int link_fusion_grid( const void *psm, FUSION_GRID **fgm, FUSION_GRID **fgs )
 {
 	int i;
 
@@ -354,7 +464,7 @@ static int PlotLinkFusionGrid( const void *psm, FUSION_GRID **fgm, FUSION_GRID *
 	FUSION_GRID    *fsgrid = NULL;
 	FUSION_GRID    *fgrptr = NULL;
 
-	const int trigstations = GetTrigStations( psmptr );
+	const int trigstations = psk_misc_trigstations_get( psmptr );
 
 /**/
 	for ( i = 0; i < MAX_IN_MSG; i++ ) {
@@ -414,8 +524,9 @@ static int PlotLinkFusionGrid( const void *psm, FUSION_GRID **fgm, FUSION_GRID *
 }
 
 /*
-*/
-static void PlotMapGrid( const FUSION_GRID *fsgrid, const short smaptype )
+ *
+ */
+static void plot_mapgrids( const FUSION_GRID *fsgrid, const short smaptype )
 {
 	int    i;
 	double gridvalue[fsgrid->numofgirds];
@@ -431,7 +542,10 @@ static void PlotMapGrid( const FUSION_GRID *fsgrid, const short smaptype )
 	return;
 }
 
-static void PlotColorbar( const float lon, const float lat, const short smaptype )
+/*
+ *
+ */
+static void plot_colorbar( const float lon, const float lat, const short smaptype )
 {
 	int i;
 
@@ -538,7 +652,10 @@ static void PlotColorbar( const float lon, const float lat, const short smaptype
 	return;
 }
 
-static void PlotGridLine( const float minlon, const float maxlon, const float minlat, const float maxlat )
+/*
+ *
+ */
+static void plot_gridline( const float minlon, const float maxlon, const float minlat, const float maxlat )
 {
 	float xline[2], yline[2];
 
@@ -569,96 +686,10 @@ static void PlotGridLine( const float minlon, const float maxlon, const float mi
 	return;
 }
 
-int PlotReadPolyLine( const char *plfilename, int plinetype )
-{
-	int    i;
-	int    pointcount;
-	float *tmp_x = NULL;
-	float *tmp_y = NULL;
-	char   line[MAX_STR_SIZE];
-
-	FILE      *fd;
-	POLY_LINE *newpl  = NULL;
-	POLY_LINE **plptr = NULL;
-
-/* Initialization */
-	tmp_x = calloc(60000, sizeof(float));
-	tmp_y = calloc(60000, sizeof(float));
-
-	if ( tmp_x == NULL || tmp_y == NULL ) {
-		logit( "e", "postshake: Error allocate temporary memory for polygon line!\n" );
-		return -1;
-	}
-
-	memset(line, 0, sizeof(line));
-
-	if ( (fd = fopen(plfilename, "r")) == NULL ) {
-		logit( "e", "postshake: Error opening polygon line file %s!\n", plfilename );
-		return -1;
-	}
-
-	switch ( plinetype ) {
-		case PLOT_NORMAL_POLY:
-			plptr = &NormalPLine;
-			break;
-		case PLOT_STRONG_POLY:
-			plptr = &StrongPLine;
-			break;
-		default:
-			logit( "e", "postshake: Unknown type ot polygon line!\n" );
-			return -2;
-	}
-
-	while ( *plptr != NULL ) plptr = &(*plptr)->next;
-	pointcount = 0;
-
-	while ( fgets(line, sizeof(line) - 1, fd) != NULL ) {
-		if ( !strlen(line) ) continue;
-
-		for ( i = 0; i < MAX_STR_SIZE; i++ ) {
-			if ( line[i] == '#' || line[i] == '\n' ) break;
-			else if ( line[i] == '\t' || line[i] == ' ' ) continue;
-			else if ( line[i] == '>' ) {
-				if ( pointcount > 0 ) {
-					if ( (newpl = calloc(1, sizeof(POLY_LINE))) == NULL ) {
-						logit( "e", "postshake: Error allocate memory for polygon line!\n" );
-						FreePolyLines( *plptr );
-						return -1;
-					}
-					newpl->points = pointcount;
-					newpl->x      = calloc(pointcount + 1, sizeof(float));
-					newpl->y      = calloc(pointcount + 1, sizeof(float));
-					newpl->next   = NULL;
-					memcpy(newpl->x, tmp_x, pointcount*sizeof(float));
-					memcpy(newpl->y, tmp_y, pointcount*sizeof(float));
-
-					*plptr = newpl;
-					plptr  = &(*plptr)->next;
-				}
-				else break;
-
-				pointcount = 0;
-			}
-			else {
-				if ( sscanf( line, "%f %f", tmp_x + pointcount, tmp_y + pointcount ) != 2 ) {
-					logit( "e", "postshake: Error reading boundary file %s!\n", plfilename );
-					FreePolyLines( *plptr );
-					return -1;
-				}
-				else pointcount++;
-			}
-			break;
-		}
-	}
-
-	fclose(fd);
-	free(tmp_x);
-	free(tmp_y);
-
-	return 0;
-}
-
-static void FreePolyLines( POLY_LINE *polyLine )
+/*
+ *
+ */
+static void free_polyline( POLY_LINE *polyLine )
 {
 	POLY_LINE *plptr = NULL;
 	POLY_LINE *next  = NULL;
@@ -669,22 +700,6 @@ static void FreePolyLines( POLY_LINE *polyLine )
 		free(plptr->y);
 		free(plptr);
 	}
-
-	return;
-}
-
-
-/************************************************
- *  PlotEnd( ) -- End process of plot
- *  Arguments:                                  *
- *    None.                                     *
- *  Returns:                                    *
- *    None.                                     *
- ************************************************/
-void PlotEnd( void )
-{
-	FreePolyLines( NormalPLine );
-	FreePolyLines( StrongPLine );
 
 	return;
 }

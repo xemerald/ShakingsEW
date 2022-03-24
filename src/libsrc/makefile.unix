@@ -9,22 +9,15 @@ CFLAGS  = $(GLOBALFLAGS) -g -I../../include
 LIB_DIR = ../../lib
 
 # All library command
-all: libslist.a libpalert.a libmisc.a libdl_chain_list.a pgplot
+all: libslist.a libmisc.a libdl_chain_list.a pgplot
 	@mv *.a $(LIB_DIR)
 
 #
 # Station list related library
 #
-libslist.a: stalist.o recordtype.o
+libslist.a: recordtype.o
 	@echo Creating $@...
-	@ar -rcs $@ stalist.o recordtype.o
-
-#
-# Palert related library
-#
-libpalert.a: palert.o
-	@echo Creating $@...
-	@ar -rcs $@ palert.o
+	@ar -rcs $@ recordtype.o
 
 #
 # Misc library

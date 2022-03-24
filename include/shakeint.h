@@ -1,12 +1,4 @@
 /*
- *     Revision history:
- *
- *     Revision 1.0  2020/02/20 17:57:20  Benjamin Yang
- *     Initial revision
- *
- */
-
-/*
  * shakeint.h
  *
  * Header file for shaking intensity type.

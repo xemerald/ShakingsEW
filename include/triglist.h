@@ -1,15 +1,4 @@
 /*
- *     Revision history:
- *
- *     Revision 1.1  2019/04/26 17:32:30  Benjamin Yang
- *     Revise the trigger type
- *
- *     Revision 1.0  2018/11/14 21:46:50  Benjamin Yang
- *     Initial revision
- *
- */
-
-/*
  * triglist.h
  *
  * Header file for trigger list data.
@@ -26,20 +15,21 @@
 
 #include <time.h>
 #include <stdint.h>
-#include <stalist.h>
+/* */
+#include <trace_buf.h>
 
-/*---------------------------------------------------------------------------*
- * Definition of structure of TYPE_TRIG_LIST:                                *
- *                                                                           *
- * -Trigger list header                                                      *
- *     -Station trigger information block                                    *
- *     -Station trigger information block                                    *
- *     -Station trigger information block                                    *
- *              .                                                            *
- *              .                                                            *
- *              .                                                            *
- * -End of TYPE_TRIG_LIST                                                    *
- *---------------------------------------------------------------------------*/
+/*
+ * Definition of structure of TYPE_TRIG_LIST:
+ *
+ * -Trigger list header
+ *     -Station trigger information block
+ *     -Station trigger information block
+ *     -Station trigger information block
+ *              .
+ *              .
+ *              .
+ * -End of TYPE_TRIG_LIST
+ */
 
  /* For triggered type flag */
  typedef enum {
@@ -61,9 +51,9 @@ typedef enum {
 	CODA_FLAG_COUNT
 } CODA_FLAG;
 
-/*---------------------------------------------------------------------------*
- * Definition of trigger list header, total size is 48 bytes                 *
- *---------------------------------------------------------------------------*/
+/*
+ * Definition of trigger list header, total size is 48 bytes
+ */
 typedef struct {
 	uint16_t trigtype;
 	uint16_t codaflag;
@@ -75,24 +65,24 @@ typedef struct {
 	double   depth;
 } TRIGLIST_HEADER;
 
-/*---------------------------------------------------------------------------*
- * Definition of Station triggered information, total size is 40 bytes       *
- *---------------------------------------------------------------------------*/
+/*
+ * Definition of Station triggered information, total size is 40 bytes
+ */
 typedef struct {
-	char sta[STA_CODE_LEN];   /* Site name (NULL-terminated) */
-	char net[NET_CODE_LEN];   /* Network name (NULL-terminated) */
-	char loc[LOC_CODE_LEN];   /* Location code (NULL-terminated) */
-	char pchan[CHAN_CODE_LEN];
-
-	uint16_t seq;          /* Sequence number of station */
-	uint16_t datatype;     /* Flag for record type */
-	double   ptime;        /* Time of peak sample in epoch seconds */
+	char     sta[TRACE2_STA_LEN];   /* Site name (NULL-terminated)     */
+	char     net[TRACE2_NET_LEN];   /* Network name (NULL-terminated)  */
+	char     loc[TRACE2_LOC_LEN];   /* Location code (NULL-terminated) */
+	char     pchan[TRACE2_CHAN_LEN];
+/* Padding? */
+	uint16_t seq;          /* Sequence number of station      */
+	uint16_t datatype;     /* Flag for record type            */
+	double   ptime;        /* Time of peak sample or pick time in epoch seconds               */
 	double   pvalue;       /* Peak value in this triggered station or weighting for this pick */
 } TRIG_STATION;
 
-/*----------------------------------------------*
- * Definition of a generic Stations List Packet *
- *----------------------------------------------*/
+/*
+ * Definition of a generic Stations List Packet
+ */
 #define MAX_TRIGLIST_SIZ  65536  /* define maximum size of trigger list message */
 
 typedef union {

@@ -1,16 +1,4 @@
 /*
- *     Revision history:
- *
- *     Revision 1.1  2020/03/13 18:56:10  Benjamin Yang
- *     Add two record type, RECORD_SPECTRAL_DISPLACEMENT &
- *     RECORD_SPECTRAL_VELOCITY.
- *
- *     Revision 1.0  2018/11/15 18:32:20  Benjamin Yang
- *     Initial revision
- *
- */
-
-/*
  * recordtype.h
  *
  * Header file for record data type.
