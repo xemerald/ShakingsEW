@@ -33,9 +33,7 @@ SQLDatabase     EEW	              # The maximum length is 36 words
 
 # List the channels lists that will grab from MySQL server
 #
-# Even when you using MySQL server to fetch station information, the channel table is
-# optional. Once you comment the option, the channel information will be filled by
-# default value(HLZ, HLN & HLE).
+# Even when you using MySQL server to fetch channel information.
 #
 SQLChannelTable    PalertChannelList
 #SQLChannelTable    SecondChannelList

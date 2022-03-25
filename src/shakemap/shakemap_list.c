@@ -2,385 +2,423 @@
 /* Standard C header include */
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
 #include <string.h>
+#include <stdint.h>
 #include <search.h>
-#include <unistd.h>
-#include <errno.h>
-
+#include <time.h>
+#include <ctype.h>
 /* Earthworm environment header include */
 #include <earthworm.h>
-
 /* Local header include */
-#include <stalist.h>
+#include <dblist.h>
+#include <dl_chain_list.h>
 #include <shakemap.h>
+#include <shakemap_misc.h>
 #include <shakemap_list.h>
+/* */
+typedef struct {
+	int     count;      /* Number of clients in the list */
+	time_t  timestamp;  /* Time of the last time updated */
+	void   *entry;      /* Pointer to first client       */
+	void   *root;       /* Root of binary searching tree */
+	void   *root_t;     /* Temporary root of binary searching tree */
+} StaList;
 
+/* */
+static int       fetch_list_sql( StaList *, const char *, const DBINFO *, const int );
+static StaList  *init_sta_list( void );
+static void      destroy_sta_list( StaList * );
+static void      dummy_func( void * );
+static _STAINFO *update_stainfo( _STAINFO *, const _STAINFO * );
+static _STAINFO *append_stainfo_list( StaList *, _STAINFO *, const int );
+static _STAINFO *create_new_stainfo(
+	const char *, const char *, const char *, const double, const double, const double
+);
+static _STAINFO *enrich_stainfo_raw(
+	_STAINFO *, const char *, const char *, const char *, const double, const double, const double
+);
+/* */
+#if defined( _USE_SQL )
+static void extract_stainfo_mysql(
+	char *, char *, char *, double *, double *, double *, const MYSQL_ROW, const unsigned long []
+);
+#endif
+/* */
+static StaList *SList = NULL;
 
-static int  _FetchStaListRing( GETLISTS *, const unsigned short );
-static int  _FetchStaListFile( GETLISTS *, const unsigned short );
-static int  SNLCompare( const void *, const void * );	/* The compare function of binary tree search */
-
-#define  MAXLIST  5
-
-static void          *Root = NULL;         /* Root of binary tree */
-static volatile _Bool RingSwitch = 0;      /* The switch for getting list from ring. */
-static GETLISTS       GetLists[MAXLIST];   /* array for requesting list name */
-static uint16_t       nLists = 0;
-static uint8_t        Historical = 0;
-
-/*********************************************************************
- *  StaListInit( ) -- Initialization function of Station list.       *
- *  Arguments:                                                       *
- *    ringName   = Name of list ring.                                *
- *    modId      = The module ID of calling process.                 *
- *    ringSwitch = The switch for getting list from ring.            *
- *  Returns:                                                         *
- *     0 = Normal.                                                   *
- *********************************************************************/
-int StaListInit( char *ringName, char *modName, uint8_t ringSwitch )
+/*
+ * shakemap_list_db_fetch() -
+ */
+int shakemap_list_db_fetch( const char *table_sta, const DBINFO *dbinfo, const int update )
 {
-	if ( ringSwitch ) {
-		sslist_init( ringName, modName );
-		RingSwitch = 1;
-	}
-	else RingSwitch = 0;
-
-	return 0;
-}
-
-
-/*********************************************************************
- *  StaListReg( ) -- Register the station list to GetList array.     *
- *  Arguments:                                                       *
- *    staListName   = Name of station list.                          *
- *    chanListName  = Name of channel list.                          *
- *  Returns:                                                         *
- *     0 = Normal.                                                   *
- *********************************************************************/
-int StaListReg( char *staListName, char *chanListName )
-{
-	if ( nLists+1 >= (int)MAXLIST ) {
-		logit( "e",	"shakemap: Too many station list, maximum is %d!\n", (int)MAXLIST );
-		return -1;
+	if ( !SList ) {
+		SList = init_sta_list();
+		if ( !SList ) {
+			logit("e", "shakemap: Fatal! Trace list memory initialized error!\n");
+			return -3;
+		}
 	}
 
-	if ( strlen(staListName) < LIST_NAME_LEN )
-		strcpy( GetLists[nLists].sslist.stalist, staListName );
-	else {
-		logit ( "e", "shakemap: Station list %s name too long, maximum is %d!\n", staListName, (int)LIST_NAME_LEN );
-		return -2;
-	}
-
-	if ( strlen(chanListName) < LIST_NAME_LEN )
-		strcpy( GetLists[nLists].sslist.chanlist, chanListName );
-	else {
-		logit ( "e", "shakemap: Station list %s name too long, maximum is %d!\n", chanListName, (int)LIST_NAME_LEN );
-		return -2;
-	}
-
-	nLists++;
-
-	return 0;
-}
-
-
-/*********************************************************************
- *  StaListFetch( ) -- Initialization function of Station list.        *
- *  Arguments:                                                       *
- *    None.                                                          *
- *  Returns:                                                         *
- *     0 = Normal.                                                   *
- *********************************************************************/
-int StaListFetch( void )
-{
-	if ( RingSwitch )
-		return _FetchStaListRing( GetLists, nLists );
+	if ( strlen(dbinfo->host) > 0 && strlen(table_sta) > 0 )
+		return fetch_list_sql( SList, table_sta, dbinfo, update );
 	else
-		return _FetchStaListFile( GetLists, nLists );
+		return 0;
 }
 
-
-/*********************************************************************
- *  _FetchStaListRing( ) -- Get Stations list from list ring.           *
- *  Arguments:                                                       *
- *    _getLists  = Name of list ring.                                *
- *    nLists     = The module ID of calling process.                 *
- *  Returns:                                                         *
- *     0 = Normal.                                                   *
- *********************************************************************/
-static int _FetchStaListRing( GETLISTS *_getLists, const unsigned short _nLists )
+/*
+ *
+ */
+int shakemap_list_sta_line_parse( const char *line, const int update )
 {
-	int      ret = 0;
-	uint32_t i;
-	uint32_t count = 0;
+	int     result = 0;
+	char    sta[TRACE2_STA_LEN]   = { 0 };
+	char    net[TRACE2_NET_LEN]   = { 0 };
+	char    loc[TRACE2_LOC_LEN]   = { 0 };
+	double  lat = 0.0;
+	double  lon = 0.0;
+	double  elv = 0.0;
 
-	_STAINFO *stainfo = NULL;
+/* */
+	if ( !SList ) {
+		SList = init_sta_list();
+		if ( !SList ) {
+			logit("e", "shakemap: Fatal! Trace list memory initialized error!\n");
+			return -3;
+		}
+	}
+/* */
+	if ( sscanf(line, "%s %s %s %lf %lf %lf", sta, net, loc, &lat, &lon, &elv) >= 6 ) {
+	/* */
+		if ( append_stainfo_list( SList, create_new_stainfo( sta, net, loc, lat, lon, elv ), update ) == NULL )
+			result = -2;
+	}
+	else {
+		logit("e", "shakemap: ERROR, lack of some trace information in local list!\n");
+		result = -1;
+	}
 
-	STALIST_HEADER *slptr = NULL;
-	STATION_BLOCK  *station_blk = NULL;
-	STATION_BLOCK  *station_end = NULL;
+	return result;
+}
 
-	void *root = NULL;
-	void *tmproot = Root;
+/*
+ * shakemap_list_end() -
+ */
+void shakemap_list_end( void )
+{
+	destroy_sta_list( SList );
+	SList = NULL;
 
-/* Initialize */
-	if ( Historical ) return 0;
+	return;
+}
 
-	for ( i=0; i<_nLists; i++ ) {
-	/* Force to update shared station list */
-		_getLists[i].sslist.shkey = 0;
+/*
+ * shakemap_list_find() -
+ */
+_STAINFO *shakemap_list_find( const char *sta, const char *net, const char *loc )
+{
+	_STAINFO *result = NULL;
+	_STAINFO  key;
 
-		if ( sslist_req( &_getLists[i].sslist ) == SL_REQ_OK ) {
-			sslist_attach( &_getLists[i].sslist );
+/* */
+	memcpy(key.sta, sta, TRACE2_STA_LEN);
+	memcpy(key.net, net, TRACE2_NET_LEN);
+	memcpy(key.loc, loc, TRACE2_LOC_LEN);
+/* Find which station */
+	if ( (result = tfind(&key, &SList->root, shakemap_misc_snl_compare)) != NULL ) {
+	/* Found in the main Palert table */
+		result = *(_STAINFO **)result;
+	}
+
+	return result;
+}
+
+/*
+ * shakemap_list_tree_activate() -
+ */
+void shakemap_list_tree_activate( void )
+{
+	void *_root = SList->root;
+
+	SList->root      = SList->root_t;
+	SList->root_t    = NULL;
+	SList->timestamp = time(NULL);
+
+	if ( _root ) {
+		sleep_ew(1000);
+		tdestroy(_root, dummy_func);
+	}
+
+	return;
+}
+
+/*
+ * shakemap_list_tree_abandon() -
+ */
+void shakemap_list_tree_abandon( void )
+{
+	if ( SList->root_t )
+		tdestroy(SList->root_t, dummy_func);
+
+	SList->root_t = NULL;
+
+	return;
+}
+
+/*
+ * shakemap_list_total_station_get() -
+ */
+int shakemap_list_total_station_get( void )
+{
+	DL_NODE *current = NULL;
+	int      result  = 0;
+
+/* */
+	for ( current = (DL_NODE *)SList->entry; current != NULL; current = DL_NODE_GET_NEXT(current) )
+		result++;
+/* */
+	SList->count = result;
+
+	return result;
+}
+
+/*
+ * shakemap_list_timestamp_get() -
+ */
+time_t shakemap_list_timestamp_get( void )
+{
+	return SList->timestamp;
+}
+
+/*
+ *
+ */
+#if defined( _USE_SQL )
+/*
+ * fetch_list_sql() - Get stations list from MySQL server
+ */
+static int fetch_list_sql( StaList *list, const char *table_sta, const DBINFO *dbinfo, const int update )
+{
+	int    result = 0;
+	char   sta[TRACE2_STA_LEN] = { 0 };
+	char   net[TRACE2_NET_LEN] = { 0 };
+	char   loc[TRACE2_LOC_LEN] = { 0 };
+	double lat;
+	double lon;
+	double elv;
+
+	MYSQL_RES *sql_res = NULL;
+	MYSQL_ROW  sql_row;
+
+/* Connect to database */
+	printf("shakemap: Querying the stations information from MySQL server %s...\n", dbinfo->host);
+	sql_res = dblist_sta_query_sql(
+		dbinfo, table_sta, SHAKEMAP_INFO_FROM_SQL,
+		COL_STA_STATION, COL_STA_NETWORK, COL_STA_LOCATION,
+		COL_STA_LATITUDE, COL_STA_LONGITUDE, COL_STA_ELEVATION
+	);
+	if ( sql_res == NULL )
+		return -1;
+	printf("shakemap: Queried the stations information success!\n");
+
+/* Start the SQL server connection for channel */
+	dblist_start_persistent_sql( dbinfo );
+/* Read station list from query result */
+	while ( (sql_row = dblist_fetch_row_sql( sql_res )) != NULL ) {
+	/* */
+		extract_stainfo_mysql(
+			sta, net, loc, &lat, &lon, &elv,
+			sql_row, dblist_fetch_lengths_sql( sql_res )
+		);
+	/* */
+		if (
+			append_stainfo_list(
+				list, create_new_stainfo( sta, net, loc, lat, lon, elv ), update
+			) != NULL
+		) {
+			result++;
 		}
 		else {
-			logit ( "e", "shakemap: Request the shared station list for %s error!\n", _getLists[i].sslist.stalist );
-			return -1;
+			result = -2;
+			break;
 		}
 	}
+/* Close the connection for channel */
+	dblist_close_persistent_sql();
+	dblist_free_result_sql( sql_res );
+	dblist_end_thread_sql();
 
-	for ( i=0; i<_nLists; i++ ) {
-		if ( (slptr = _getLists[i].sslist.slh) != (STALIST_HEADER *)NULL ) {
-		/* Wait for the building process */
-			sslist_wait( &_getLists[i].sslist, SL_READ );
+	if ( result > 0 )
+		logit("o", "shakemap: Read %d stations information from MySQL server success!\n", result);
+	else
+		logit("e", "shakemap: Some errors happened when fetching stations information from MySQL server!\n");
 
-		/* Move the pointer to begin of each block */
-			station_blk = (STATION_BLOCK *)(slptr + 1);
-			station_end = (STATION_BLOCK *)((uint8_t *)slptr + station_blk->offset_chaninfo);
-
-		/* Start to parse the information */
-			for ( ; station_blk<station_end; station_blk++ ) {
-			/* Allocate the station information memory */
-				stainfo = (_STAINFO *)calloc(1, sizeof(_STAINFO));
-
-				if ( stainfo == NULL ) {
-					logit( "e", "shakemap: Error allocate the memory for station information!\n" );
-					ret = -2;
-					goto except;
-				}
-
-				strncpy(stainfo->sta, station_blk->sta, STA_CODE_LEN);
-				strncpy(stainfo->net, station_blk->net, NET_CODE_LEN);
-				strncpy(stainfo->loc, station_blk->loc, LOC_CODE_LEN);
-
-				stainfo->latitude    = station_blk->latitude;
-				stainfo->longitude   = station_blk->longitude;
-				stainfo->elevation   = station_blk->elevation;
-				stainfo->shakelatest = 0;
-
-			/* Insert the station information into binary tree */
-				if ( tsearch(stainfo, &root, SNLCompare) == NULL ) {
-					logit( "e", "shakemap: Error insert station into binary tree!\n" );
-					ret = -2;
-					goto except;
-				}
-				stainfo = NULL;
-
-			/* Counting the total number of stations */
-				count++;
-			}
-
-			if ( !_getLists[i].sslist.slh->seq ) Historical = 1;
-			sslist_release( &_getLists[i].sslist, SL_READ );
-		}
-	}
-
-	if ( Historical )
-		logit( "o", "shakemap: Change from Real-Time Mode to the Historical Event Mode!\n" );
-
-	for ( i=0; i<_nLists; i++ )
-		if ( _getLists[i].sslist.slh != (STALIST_HEADER *)NULL )
-			sslist_detach( &_getLists[i].sslist );
-
-	if ( count ) {
-	/* Switch the tree's root */
-		Root = root;
-	/* Waiting for 500 ms */
-		sleep_ew(500);
-	/* Free the old one */
-		tdestroy(tmproot, free);
-
-		logit("o", "shakemap: Reading %d stations information from shared station list success!\n", count);
-		return count;
-	}
-
-except:
-	if ( stainfo != (_STAINFO *)NULL ) free(stainfo);
-	tdestroy(root, free);
-
-	return ret;
+	return result;
 }
 
-/*********************************************************************
- *  _FetchStaListFile( ) -- Get Station list from local file.               *
- *  Arguments:                                                       *
- *    _getLists   = Name of list ring.                                *
- *    _nLists     = The module ID of calling process.                 *
- *  Returns:                                                         *
- *     0 = Normal.                                                   *
- *********************************************************************/
-static int _FetchStaListFile( GETLISTS *_getLists, const unsigned short _nLists )
+/*
+ * extract_stainfo_mysql() -
+ */
+static void extract_stainfo_mysql(
+	char *sta, char *net, char *loc, double *lat, double *lon, double *elv,
+	const MYSQL_ROW sql_row, const unsigned long row_lengths[]
+) {
+	char _str[32] = { 0 };
+
+/* */
+	dblist_field_extract_sql( sta, TRACE2_STA_LEN, sql_row[0], row_lengths[0] );
+	dblist_field_extract_sql( net, TRACE2_NET_LEN, sql_row[1], row_lengths[1] );
+	dblist_field_extract_sql( loc, TRACE2_LOC_LEN, sql_row[2], row_lengths[2] );
+	*lat = atof(dblist_field_extract_sql( _str, sizeof(_str), sql_row[3], row_lengths[3] ));
+	*lon = atof(dblist_field_extract_sql( _str, sizeof(_str), sql_row[4], row_lengths[4] ));
+	*elv = atof(dblist_field_extract_sql( _str, sizeof(_str), sql_row[5], row_lengths[5] ));
+
+	return;
+}
+
+#else
+/*
+ * fetch_list_sql() - Fake function
+ */
+static int fetch_list_sql( StaList *list, const char *table_sta, const DBINFO *dbinfo, const int update )
 {
-	int      ret = 0;
-	uint32_t i;
-	uint32_t count = 0;
-	uint16_t readingstatus = 0;
+	printf(
+		"shakemap: Skip the process of fetching station list from remote database "
+		"'cause you did not define the _USE_SQL tag when compiling.\n"
+	);
+	return 0;
+}
+#endif
 
-	char line[128];
+/*
+ * init_sta_list() -
+ */
+static StaList *init_sta_list( void )
+{
+	StaList *result = (StaList *)calloc(1, sizeof(StaList));
 
-	FILE     *fp = NULL;
-	_STAINFO *stainfo = NULL;
+	if ( result ) {
+		result->count     = 0;
+		result->timestamp = time(NULL);
+		result->entry     = NULL;
+		result->root      = NULL;
+		result->root_t    = NULL;
+	}
 
-	void *root = NULL;
-	void *tmproot = Root;
+	return result;
+}
 
+/*
+ * destroy_sta_list() -
+ */
+static void destroy_sta_list( StaList *list )
+{
+	if ( list != (StaList *)NULL ) {
+	/* */
+		tdestroy(list->root, dummy_func);
+		dl_list_destroy( (DL_NODE **)&list->entry, free );
+		free(list);
+	}
 
-	for ( i=0; i<_nLists; i++ ) {
-	/* Open list file */
-		if ( (fp = fopen(_getLists[i].slist.stalist, "r")) == NULL ) {
-			logit("e", "shakemap: Read stations list from local file error!\n");
-			return -1;
-		}
+	return;
+}
 
-	/* Read each line with the stations & channels sequence */
-		while ( fgets( line, sizeof(line) - 1, fp ) != NULL ) {
-			if ( !strlen(line) ) continue;
+/*
+ *  append_stainfo_list() - Appending the new client to the client list.
+ */
+static _STAINFO *append_stainfo_list( StaList *list, _STAINFO *stainfo, const int update )
+{
+	_STAINFO *result = NULL;
+	void    **_root  = update == SHAKEMAP_LIST_UPDATING ? &list->root : &list->root_t;
 
-			for ( i = 0; i < (int)sizeof(line); i++ ) {
-				if ( line[i] == '#' || line[i] == '\n' ) break;
-				else if ( line[i] == '\t' || line[i] == ' ' ) continue;
-				else
-				{
-				/* Station line */
-					if ( readingstatus == 0 ) {
-					/* Allocate the trace information memory */
-						stainfo = (_STAINFO *)calloc(1, sizeof(_STAINFO));
-
-						if ( stainfo == NULL ) {
-							logit( "e", "shakemap: Error allocate the memory for station information!\n" );
-							ret = -2;
-							goto except;
-						}
-
-						if ( sscanf( line, "%*d %hd %s %s %s %lf %lf %lf",
-							&readingstatus,
-							stainfo->sta,
-							stainfo->net,
-							stainfo->loc,
-							&stainfo->latitude,
-							&stainfo->longitude,
-							&stainfo->elevation ) != 7 )
-						{
-							logit( "e", "shakemap: Read stations information error!\n" );
-							ret = -1;
-							goto except;
-						}
-
-					/* Counting the total number of stations */
-						count++;
-
-					/* Check the channel number */
-						if ( readingstatus == 0 ) {
-							logit ( "e", "shakemap: There is not any channels information of %s, please check the list file!\n", stainfo->sta );
-						}
-					}
-				/* Channel line */
-					else {
-						if ( sscanf( line, "%*d %*s %*s %*s %*f %*f\n" ) != 0 ) {
-							logit( "e", "shakemap: Read %s channels information error!\n", stainfo->sta );
-							ret = -1;
-							goto except;
-						}
-
-						if ( --readingstatus == 0 ) {
-						/* Insert the station information into binary tree */
-							if ( tsearch(stainfo, &root, SNLCompare) == NULL ) {
-								logit( "e", "shakemap: Error insert station into binary tree!\n" );
-								ret = -2;
-								goto except;
-							}
-							stainfo = NULL;
-						}
-					}
-
-					break;
-				}
+/* */
+	if ( list && stainfo ) {
+		if ( (result = tfind(stainfo, _root, shakemap_misc_snl_compare)) == NULL ) {
+		/* Insert the station information into binary tree */
+			if ( dl_node_append( (DL_NODE **)&list->entry, stainfo ) == NULL ) {
+				logit("e", "shakemap: Error insert channel into linked list!\n");
+				goto except;
+			}
+			if ( (result = tsearch(stainfo, &list->root_t, shakemap_misc_snl_compare)) == NULL ) {
+				logit("e", "shakemap: Error insert channel into binary tree!\n");
+				goto except;
 			}
 		}
-		fclose(fp);
+		else if ( update == SHAKEMAP_LIST_UPDATING ) {
+			update_stainfo( *(_STAINFO **)result, stainfo );
+			if ( (result = tsearch(stainfo, &list->root_t, shakemap_misc_snl_compare)) == NULL ) {
+				logit("e", "shakemap: Error insert channel into binary tree!\n");
+				goto except;
+			}
+		}
+		else {
+			logit(
+				"o", "shakemap: SNL(%s.%s.%s) is already in the list, skip it!\n",
+				stainfo->sta, stainfo->net, stainfo->loc
+			);
+			free(stainfo);
+		}
 	}
 
-	if ( count ) {
-	/* Switch the tree's root */
-		Root = root;
-	/* Waiting for 500 ms */
-		sleep_ew(500);
-	/* Free the old one */
-		tdestroy(tmproot, free);
-
-		logit( "o", "shakemap: Reading %d stations information success!\n", count );
-		return count;
-	}
-
+	return result ? *(_STAINFO **)result : NULL;
+/* Exception handle */
 except:
-	if ( stainfo != (_STAINFO *)NULL ) free(stainfo);
-	tdestroy(root, free);
-
-	return ret;
+	free(stainfo);
+	return NULL;
 }
 
-/*************************************************************
- *  FindStation( ) -- Output the Station that match the SNL. *
- *  Arguments:                                               *
- *    tpv = Pointer of the trace you want to find.           *
- *  Returns:                                                 *
- *     NULL = Didn't find the trace.                         *
- *    !NULL = The Pointer to the trace.                      *
- *************************************************************/
-_STAINFO *StaListFind( _STAINFO *key )
-{
-	_STAINFO *staptr = NULL;
+/*
+ *  create_new_stainfo() - Creating new channel info memory space with the input value.
+ */
+static _STAINFO *create_new_stainfo(
+	const char *sta, const char *net, const char *loc, const double lat, const double lon, const double elv
+) {
+	_STAINFO *result = (_STAINFO *)calloc(1, sizeof(_STAINFO));
 
-/* Find which trace */
-	if ( (staptr = tfind(key, &Root, SNLCompare)) == NULL ) {
-	/* Not found in trace table */
-		return NULL;
+/* */
+	if ( result ) {
+		enrich_stainfo_raw( result, sta, net, loc, lat, lon, elv );
+		result->shakelatest = 0;
 	}
 
-	return *(_STAINFO **)staptr;
+	return result;
 }
 
-/*********************************************************************
- *  SNLCompare( )  the SNL compare function of binary tree search    *
- *********************************************************************/
-static int SNLCompare( const void *a, const void *b )
-{
-	int rc;
-	_STAINFO *tmpa, *tmpb;
+/*
+ * enrich_stainfo_raw() -
+ */
+static _STAINFO *enrich_stainfo_raw(
+	_STAINFO *stainfo, const char *sta, const char *net, const char *loc,
+	const double lat, const double lon, const double elv
+) {
+/* */
+	memcpy(stainfo->sta, sta, TRACE2_STA_LEN);
+	memcpy(stainfo->net, net, TRACE2_NET_LEN);
+	memcpy(stainfo->loc, loc, TRACE2_LOC_LEN);
+	stainfo->latitude    = lat;
+	stainfo->longitude   = lon;
+	stainfo->elevation   = elv;
 
-	tmpa = (_STAINFO *)a;
-	tmpb = (_STAINFO *)b;
-
-	rc = strcmp( tmpa->sta, tmpb->sta );
-	if ( rc != 0 ) return rc;
-	rc = strcmp( tmpa->net, tmpb->net );
-	if ( rc != 0 ) return rc;
-	rc = strcmp( tmpa->loc, tmpb->loc );
-	return rc;
+	return stainfo;
 }
 
-/*************************************************
- *  EndStaList( ) -- End process of Trace list.  *
- *  Arguments:                                   *
- *    None.                                      *
- *  Returns:                                     *
- *    None.                                      *
- *************************************************/
-void StaListEnd( void )
+/*
+ * update_stainfo() -
+ */
+static _STAINFO *update_stainfo( _STAINFO *dest, const _STAINFO *src )
 {
-	tdestroy(Root, free);
-	if ( RingSwitch ) sslist_end();
+/* */
+	dest->latitude    = src->latitude;
+	dest->longitude   = src->longitude;
+	dest->elevation   = src->elevation;
+	dest->shakelatest = 0;
 
+	return dest;
+}
+
+/*
+ * dummy_func() -
+ */
+static void dummy_func( void *node )
+{
 	return;
 }

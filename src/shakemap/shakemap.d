@@ -8,12 +8,13 @@ PeakRing            PEAK_RING       # shared memory ring for input peak value me
 TrigRing            TRIG_RING       # shared memory ring for input trigger list
 OutputRing          GMAP_RING       # shared memory ring for output grid map message;
                                     # if not define, will close this function
-ListRing            LIST_RING       # shared memory ring for input station list;
-                                    # if not define, will close this function
 LogFile             1               # 0 to turn off disk log file; 1 to turn it on
                                     # to log to module log but not stderr/stdout
 HeartBeatInterval   15              # seconds between heartbeats
-
+UpdateInterval      0               # setting for automatical updating interval (seconds). If set this
+								    # parameter larger than 0, the program will update the stations'
+								    # list with this interval; or the program will ignore the new
+								    # incoming trace.
 QueueSize           10              # max messages in internal circular msg buffer
 
 #  Algorithm related parameters:
@@ -31,11 +32,41 @@ InterpolateDistance     30.0        # the maximum distance when doing interpolat
 ReportPath      /home/.../ew/run/shakemap/             # directory to create the report files
 MapBoundFile    /home/.../ew/run/params/taiwan.txt     # file define the target zone boundary in latitude & longtitude
 
-# List the stations list to grab from MySQL server & filename in local
-#              Station list      Channel list
-GetListFrom   PalertList_Test    PalertChannels
+# MySQL server information:
+#
+# If you setup the follow parameter especially SQLHost, this program will fetch
+# list from MySQL server or you can just comment all of them, then it will turn
+# off this function.
+#
+SQLHost         127.0.0.1         # The maximum length is 36 words
+SQLPort         3306              # Port number between 1 to 65536
+SQLDatabase     EEW	              # The maximum length is 36 words
+
+# Login information example
+#
+# SQLUser       test
+# SQLPassword   123456
+#@LoginInfo_sql                    # Please keep the security of the SQL login information
+
+# List the stations lists that will grab from MySQL server
+#
+# Even when you using MySQL server to fetch station information.
+#
+SQLStationTable    PalertList
+#SQLStationTable    SecondList
+#SQLStationTable    ThirdList
 
 # List the message logos to grab from transport ring
 #              Installation       Module          Message Types
 GetEventsFrom  INST_WILDCARD    MOD_TRACE2PEAK   TYPE_TRACEPEAK
 GetEventsFrom  INST_WILDCARD    MOD_PEAK2TRIG    TYPE_TRIGLIST
+
+# Local station list:
+#
+# The local list for stations that will receive. By the way, the priority of local list
+# is higher than the one from remote data. And the layout should be like these example:
+#
+# Station  Station   Network   Location    Latitude      Longitude       Elevation(km)
+# Station   TEST       TW         --       23.050514     121.215483      1.25             # example
+#
+#@stationlist_shakemap

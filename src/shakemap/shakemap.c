@@ -8,19 +8,17 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <ctype.h>
 #include <math.h>
 #include <float.h>
 #include <time.h>
-
 /* Earthworm environment header include */
 #include <earthworm.h>
 #include <kom.h>
 #include <transport.h>
 #include <lockfile.h>
 #include <trace_buf.h>
-
 /* Local header include */
-#include <stalist.h>
 #include <recordtype.h>
 #include <tracepeak.h>
 #include <triglist.h>
@@ -32,28 +30,26 @@
 #include <shakemap_triglist.h>
 #include <shakemap_msg_queue.h>
 
-/* Functions prototype in this source file
- *******************************/
-void  shakemap_config ( char * );
-void  shakemap_lookup ( void );
-void  shakemap_status ( unsigned char, short, char * );
+/* Functions prototype in this source file */
+static void shakemap_config( char * );
+static void shakemap_lookup( void );
+static void shakemap_status( unsigned char, short, char * );
+static void shakemap_end( void );                /* Free all the local memory & close socket */
 
+static void update_list ( void * );
+static int  update_list_configfile( char * );
 static thr_ret ShakingMap ( void * );
 
-static void UpdateStaList ( void );
-static void EndProc( void );                /* Free all the local memory & close socket */
-
 /* Ring messages things */
-static  SHM_INFO  PeakRegion;    /* shared memory region to use for i/o    */
-static  SHM_INFO  TrigRegion;    /* shared memory region to use for i/o    */
-static  SHM_INFO  OutRegion;     /* shared memory region to use for i/o    */
+static SHM_INFO PeakRegion;    /* shared memory region to use for i/o    */
+static SHM_INFO TrigRegion;    /* shared memory region to use for i/o    */
+static SHM_INFO OutRegion;     /* shared memory region to use for i/o    */
 
 #define MAXLOGO      5
 #define MAX_PATH_STR 256
-
-MSG_LOGO  Putlogo;                /* array for output module, type, instid     */
-MSG_LOGO  Getlogo[MAXLOGO];       /* array for requesting module, type, instid */
-pid_t     myPid;                  /* for restarts by startstop                 */
+static MSG_LOGO Putlogo;                /* array for output module, type, instid     */
+static MSG_LOGO Getlogo[MAXLOGO];       /* array for requesting module, type, instid */
+static pid_t    MyPid;                  /* for restarts by startstop                 */
 
 /* Thread things */
 #define THREAD_STACK 8388608         /* 8388608 Byte = 8192 Kilobyte = 8 Megabyte */
@@ -62,18 +58,18 @@ pid_t     myPid;                  /* for restarts by startstop                 *
 #define THREAD_ERR   -1              /* Thread encountered error quit    */
 sema_t  *SemaPtr;
 
-/* Things to read or derive from configuration file
- **************************************************/
+/* */
+#define MAXLIST  5
+/* Things to read or derive from configuration file */
 static char     PeakRingName[MAX_RING_STR];   /* name of transport ring for i/o    */
 static char     TrigRingName[MAX_RING_STR];   /* name of transport ring for i/o    */
 static char     OutRingName[MAX_RING_STR];  /* name of transport ring for i/o    */
-static char     ListRingName[MAX_RING_STR]; /* name of transport ring for i/o    */
 static char     MyModName[MAX_MOD_STR];     /* speak as this module name/id      */
 static uint8_t  LogSwitch;                  /* 0 if no logfile should be written */
 static uint64_t HeartBeatInterval;          /* seconds between heartbeats        */
+static uint64_t UpdateInterval = 0;         /* seconds between updating check    */
 static uint64_t QueueSize = 10;             /* seconds between heartbeats        */
 static uint8_t  OutputMapToRingSwitch = 0;
-static uint8_t  ListFromRingSwitch    = 0;
 static uint16_t nLogo = 0;
 static uint16_t TriggerAlgType  = 0;
 static uint16_t PeakValueType   = 0;
@@ -82,11 +78,13 @@ static char     ReportPath[MAX_PATH_STR];
 static float    *X, *Y;
 static uint32_t BoundPointCount;
 static double   InterpolateDistance = 30.0;
+static DBINFO   DBInfo;
+static char     SQLStationTable[MAXLIST][MAX_TABLE_LEGTH];
+static uint16_t nList = 0;
 
-/* Things to look up in the earthworm.h tables with getutil.c functions
- **********************************************************************/
-static int64_t PeakRingKey;       /* key of transport ring for i/o     */
-static int64_t TrigRingKey;       /* key of transport ring for i/o     */
+/* Things to look up in the earthworm.h tables with getutil.c functions */
+static int64_t PeakRingKey;     /* key of transport ring for i/o     */
+static int64_t TrigRingKey;     /* key of transport ring for i/o     */
 static int64_t OutRingKey;      /* key of transport ring for i/o     */
 static uint8_t InstId;          /* local installation id             */
 static uint8_t MyModId;         /* Module Id for this program        */
@@ -96,86 +94,83 @@ static uint8_t TypeTracePeak = 0;
 static uint8_t TypeTrigList  = 0;
 static uint8_t TypeGridMap   = 0;
 
-/* Error messages used by shakemap
- *********************************/
+/* Error messages used by shakemap */
 #define  ERR_MISSMSG       0   /* message missed in transport ring       */
 #define  ERR_TOOBIG        1   /* retreived msg too large for buffer     */
 #define  ERR_NOTRACK       2   /* msg retreived; tracking limit exceeded */
 #define  ERR_QUEUE         3   /* error queueing message for sending      */
 static char Text[150];         /* string for log/error messages          */
 
-/* Station list update status flag
- *********************************/
-#define  UPDATE_UNLOCK     0   /* It is open to do station list updating */
-#define  UPDATE_NEEDED     1   /* The station list need to update */
-#define  UPDATE_PROCING    2   /* The updating is processing */
-#define  UPDATE_LOCK       3   /* It is locked to do station list updating */
+/* Station list update status flag */
+#define  LIST_IS_UPDATED      0
+#define  LIST_NEED_UPDATED    1
+#define  LIST_UNDER_UPDATE    2
 
-#define  UPDATE_TIME_INTERVAL 30
-
-static volatile uint8_t  UpdateStatus     = UPDATE_UNLOCK;
+static volatile uint8_t  UpdateStatus = LIST_IS_UPDATED;
 static volatile int32_t  ShakingMapStatus = THREAD_OFF;
 static volatile uint8_t  Finish        = 0;
 static volatile uint64_t TotalStations = 0;
 
-/* struct timespec TT, TT2; */            /* Nanosecond Timer */
-
-
+/*
+ *
+ */
 int main ( int argc, char **argv )
 {
-	int res;
-
-	int64_t    msgSize = 0;
-	uint64_t   stanumber_local = 0;
-	uint64_t   trigseccount = 0;
-	MSG_LOGO   reclogo;
-	time_t     timeNow;           /* current time                  */
-	time_t     timeLastBeat;      /* time last heartbeat was sent  */
-	time_t     timeLastTrigger;   /* time last updated stations list */
-	time_t     timeLastUpdate;    /* time last updated stations list */
-
-	char       *lockfile;
-	int32_t     lockfile_fd;
+	int      i;
+	int      res;
+	int64_t  msgSize = 0;
+	uint64_t stanumber_local = 0;
+	uint64_t trigseccount = 0;
+	MSG_LOGO reclogo;
+	time_t   time_now;           /* current time                  */
+	time_t   time_lastbeat;      /* time last heartbeat was sent  */
+	time_t   timeLastTrigger;   /* time last updated stations list */
+	time_t   time_lastupd;    /* time last updated stations list */
+	char    *lockfile;
+	int32_t  lockfile_fd;
 #if defined( _V710 )
-	ew_thread_t   tid;            /* Thread ID */
+	ew_thread_t tid;            /* Thread ID */
 #else
-	unsigned      tid;            /* Thread ID */
+	unsigned    tid;            /* Thread ID */
 #endif
-
 /* Internal data exchange pointer and buffer */
-	_STAINFO            key;
-	_STAINFO           *staptr   = NULL;
-	STA_SHAKE          *shakeptr = NULL;
-	SHAKE_LIST_HEADER  *slbuffer = NULL;
-
+	_STAINFO          *staptr   = NULL;
+	STA_SHAKE         *shakeptr = NULL;
+	SHAKE_LIST_HEADER *slbuffer = NULL;
 /* Input data type and its buffer */
-	TRACE_PEAKVALUE tracepv;
-	TrigListPacket  tlist;
+	TRACE_PEAKVALUE    tracepv;
+	TrigListPacket     tlist;
 
-
-/* Check command line arguments
- ******************************/
+/* Check command line arguments */
 	if ( argc != 2 ) {
-		fprintf( stderr, "Usage: shakemap <configfile>\n" );
-		exit( 0 );
+		fprintf(stderr, "Usage: shakemap <configfile>\n");
+		exit(0);
 	}
-
 	Finish = 1;
-/* Initialize name of log-file & open it
- ***************************************/
-	logit_init( argv[1], 0, 256, 1 );
-
-/* Read the configuration file(s)
- ********************************/
-	shakemap_config( argv[1] );
-	logit( "" , "%s: Read command file <%s>\n", argv[0], argv[1] );
-
-/* Look up important info from earthworm.h tables
- ************************************************/
+/* Initialize name of log-file & open it */
+	logit_init(argv[1], 0, 256, 1);
+/* Read the configuration file(s) */
+	shakemap_config(argv[1]);
+	logit("" , "%s: Read command file <%s>\n", argv[0], argv[1]);
+/* Read the channels list from remote database */
+	for ( i = 0; i < nList; i++ ) {
+		if ( shakemap_list_db_fetch( SQLStationTable[i], &DBInfo, SHAKEMAP_LIST_INITIALIZING ) < 0 ) {
+			fprintf(stderr, "Something error when fetching stations list %s. Exiting!\n", SQLStationTable[i]);
+			exit(-1);
+		}
+	}
+/* Checking total station number again */
+	if ( !(i = shakemap_list_total_station_get()) ) {
+		fprintf(stderr, "There is not any station in the list after fetching. Exiting!\n");
+		exit(-1);
+	}
+	else {
+		logit("o", "shakemap: There are total %d station(s) in the list.\n", i);
+		shakemap_list_tree_activate();
+	}
+/* Look up important info from earthworm.h tables */
 	shakemap_lookup();
-
-/* Reinitialize logit to desired logging level
- **********************************************/
+/* Reinitialize logit to desired logging level */
 	logit_init( argv[1], 0, 256, LogSwitch );
 
 	lockfile = ew_lockfile_path(argv[1]);
@@ -183,125 +178,86 @@ int main ( int argc, char **argv )
 		fprintf(stderr, "one instance of %s is already running, exiting\n", argv[0]);
 		exit(-1);
 	}
-/*
-	fprintf(stderr, "DEBUG: for %s, fd=%d for %s, LOCKED\n", argv[0], lockfile_fd, lockfile);
-*/
-
 /* Get process ID for heartbeat messages */
-	myPid = getpid();
-	if( myPid == -1 ) {
+	MyPid = getpid();
+	if ( MyPid == -1 ) {
 		logit("e","shakemap: Cannot get pid. Exiting.\n");
 		exit(-1);
 	}
-
-/* Build the message
- *******************/
+/* Build the message */
 	Putlogo.instid = InstId;
 	Putlogo.mod    = MyModId;
 	Putlogo.type   = TypeGridMap;
-
-/* Attach to Input/Output shared memory ring
- *******************************************/
+/* Attach to Input/Output shared memory ring */
 	tport_attach( &PeakRegion, PeakRingKey );
-	logit( "", "shakemap: Attached to public memory region %s: %ld\n",
-		PeakRingName, PeakRingKey );
-
+	logit("", "shakemap: Attached to public memory region %s: %ld\n", PeakRingName, PeakRingKey);
 	tport_attach( &TrigRegion, TrigRingKey );
-	logit( "", "shakemap: Attached to public memory region %s: %ld\n",
-		TrigRingName, TrigRingKey );
-
+	logit("", "shakemap: Attached to public memory region %s: %ld\n", TrigRingName, TrigRingKey);
 /* Flush the transport ring */
-	tport_flush( &PeakRegion, Getlogo, nLogo, &reclogo );
-	tport_flush( &TrigRegion, Getlogo, nLogo, &reclogo );
-
+	tport_flush(&PeakRegion, Getlogo, nLogo, &reclogo);
+	tport_flush(&TrigRegion, Getlogo, nLogo, &reclogo);
+/* */
 	if ( OutputMapToRingSwitch ) {
-		tport_attach( &OutRegion, OutRingKey );
-		logit( "", "shakemap: Attached to public memory region %s: %ld\n",
-			OutRingName, OutRingKey );
+		tport_attach(&OutRegion, OutRingKey);
+		logit("", "shakemap: Attached to public memory region %s: %ld\n", OutRingName, OutRingKey);
 	}
-
-/* Force a heartbeat to be issued in first pass thru main loop
- *************************************************************/
-	timeLastBeat = time(&timeNow) - HeartBeatInterval - 1;
-
-/* Initialize stations list */
-	StaListInit( ListRingName, MyModName, ListFromRingSwitch );
-	if ( (TotalStations = StaListFetch()) <= 0 ) {
-		logit("e", "shakemap: Cannot get any list of stations, exiting!\n");
-		EndProc();
-		exit(-1);
-	}
-	timeLastUpdate  = time(&timeNow);
-	timeLastTrigger = timeNow;
 
 	/* CreateSemaphore_ew(); */ /* Obsoleted by Earthworm */
 	SemaPtr = CreateSpecificSemaphore_ew( 0 );
-	MsgQueueInit( QueueSize, sizeof(SHAKE_LIST_ELEMENT)*TotalStations + sizeof(SHAKE_LIST_HEADER) );
+	shakemap_msgqueue_init( QueueSize, sizeof(SHAKE_LIST_ELEMENT)*TotalStations + sizeof(SHAKE_LIST_HEADER) );
 
+/* Force a heartbeat to be issued in first pass thru main loop */
+	time_lastbeat    = time(&time_now) - HeartBeatInterval - 1;
+	time_lastupd  = time(&time_now);
+	timeLastTrigger = time_now;
 /*----------------------- setup done; start main loop -------------------------*/
-	while(1)
-	{
-	/* Send shakemap's heartbeat
-	***************************/
-		if  ( time(&timeNow) - timeLastBeat >= (int64_t)HeartBeatInterval ) {
-			timeLastBeat = timeNow;
+	while ( 1 ) {
+	/* Send shakemap's heartbeat */
+		if  ( time(&time_now) - time_lastbeat >= (int64_t)HeartBeatInterval ) {
+			time_lastbeat = time_now;
 			shakemap_status( TypeHeartBeat, 0, "" );
 		}
-
-		if ( UpdateStatus == UPDATE_NEEDED
-			&& timeNow - timeLastUpdate >= UPDATE_TIME_INTERVAL
-			&& TrigListLength() == 0 )
-		{
-			UpdateStaList();
+	/* */
+		if (
+			UpdateInterval &&
+			UpdateStatus == LIST_NEED_UPDATED &&
+			(time_now - time_lastupd) >= (int64_t)UpdateInterval
+		) {
+			time_lastupd = time_now;
+			update_list( argv[1] );
 		}
 
 		if ( stanumber_local < TotalStations ) {
 			if ( stanumber_local ) free(slbuffer);
 			stanumber_local = TotalStations;
 			slbuffer = (SHAKE_LIST_HEADER *)malloc(sizeof(SHAKE_LIST_ELEMENT)*stanumber_local + sizeof(SHAKE_LIST_HEADER));
-			MsgQueueReInit( QueueSize, sizeof(SHAKE_LIST_ELEMENT)*stanumber_local + sizeof(SHAKE_LIST_HEADER) );
+			shakemap_msgqueue_reinit( QueueSize, sizeof(SHAKE_LIST_ELEMENT)*stanumber_local + sizeof(SHAKE_LIST_HEADER) );
 		}
 
 		if ( ShakingMapStatus != THREAD_ALIVE && Finish ) {
 			if ( StartThread( ShakingMap, (unsigned)THREAD_STACK, &tid ) == -1 ) {
 				logit( "e", "shakemap: Error starting ShakingMap thread; exiting!\n");
-				EndProc();
+				shakemap_end();
 				exit(-1);
 			}
 			ShakingMapStatus = THREAD_ALIVE;
 		}
 
-	/* Process all new messages
-	**************************/
-		do
-		{
-		/* See if a termination has been requested
-		*****************************************/
-			if ( tport_getflag( &PeakRegion ) == TERMINATE ||
-				tport_getflag( &PeakRegion ) == myPid ) {
+	/* Process all new messages */
+		do {
+		/* See if a termination has been requested */
+			res = tport_getflag(&PeakRegion);
+			if ( res == TERMINATE || res == MyPid ) {
 			/* write a termination msg to log file */
-				logit( "t", "shakemap: Termination requested; exiting!\n" );
-				fflush( stdout );
-			/* should check the return of these if we really care */
-			/*
-				fprintf(stderr, "DEBUG: %s, fd=%d for %s\n", argv[0], lockfile_fd, lockfile);
-			*/
-				Finish = 0;
-				PostSpecificSemaphore_ew( SemaPtr );
-			/* detach from shared memory */
-				sleep_ew(500);
-				EndProc();
-				KillThread(tid);
-
-				ew_unlockfile(lockfile_fd);
-				ew_unlink_lockfile(lockfile);
-				exit( 0 );
+				logit("t", "shakemap: Termination requested; exiting!\n");
+				fflush(stdout);
+			/* */
+				goto exit_procedure;
 			}
 
-		/* Get msg & check the return code from transport
-		 ************************************************/
-			res = tport_getmsg( &TrigRegion, Getlogo, nLogo, &reclogo, &msgSize, (char *)&tlist.msg, MAX_TRIGLIST_SIZ );
-
+		/* Get msg & check the return code from transport */
+			res = tport_getmsg(&TrigRegion, Getlogo, nLogo, &reclogo, &msgSize, (char *)&tlist.msg, MAX_TRIGLIST_SIZ);
+		/* */
 			if ( res == GET_OK ) {
 			/* Check the received message is the trigger information */
 				if ( reclogo.type == TypeTrigList ) {
@@ -311,42 +267,37 @@ int main ( int argc, char **argv )
 						TRIG_STATION *tstaend = tsta + tlist.tlh.trigstations;
 
 						for ( ; tsta < tstaend; tsta++ ) {
-							strcpy(key.sta, tsta->sta);
-							strcpy(key.net, tsta->net);
-							strcpy(key.loc, tsta->loc);
-
-							staptr = StaListFind( &key );
-
-							if ( staptr == NULL ) {
+							if ( (staptr = shakemap_list_find( tsta->sta, tsta->net, tsta->loc )) == NULL ) {
 							/* Not found in trace table */
-								/* printf("shakemap: %s.%s.%s.%s not found in station table, maybe it's a new trace.\n",
-									tracepv.sta, tracepv.chan, tracepv.net, tracepv.loc); */
+								//printf("shakemap: %s.%s.%s.%s not found in station table, maybe it's a new trace.\n",
+								//tracepv.sta, tracepv.chan, tracepv.net, tracepv.loc); */
 							/* Force to update the table */
-								if ( UpdateStatus == UPDATE_UNLOCK ) UpdateStatus = UPDATE_NEEDED;
+								if ( UpdateStatus == LIST_IS_UPDATED )
+									UpdateStatus = LIST_NEED_UPDATED;
 								continue;
 							}
 
 						/* Insert the triggered station pointer to the trigger list */
-							if ( TrigListInsert( staptr ) == NULL ) {
+							if ( shakemap_tlist_insert( staptr ) == NULL ) {
 								logit( "e","shakemap: Error insert station %s into trigger list.\n", staptr->sta );
 								continue;
 							}
 						}
 					/* */
-						if ( !trigseccount ) timeLastTrigger = (time_t)tlist.tlh.origintime;
+						if ( !trigseccount )
+							timeLastTrigger = (time_t)tlist.tlh.origintime;
 					/* */
 						trigseccount = TriggerDuration;
 					} /* tlist.tlh.trigtype == TriggerAlgType */
 				} /* reclogo.type == TypeTrigList */
 			} /* res == GET_OK */
-
 		/* */
-			if ( trigseccount > 0 && (time(&timeNow) - timeLastTrigger) >= (int)TRIGGER_MIN_INT ) {
+			if ( trigseccount > 0 && (time(&time_now) - timeLastTrigger) >= (int)TRIGGER_MIN_INT ) {
 			/* */
-				TrigListTimeSync( timeLastTrigger );
-				TrigListPeakValUpd();
+				shakemap_tlist_time_sync( timeLastTrigger );
+				shakemap_tlist_pvalue_update();
 			/* */
-				if ( (msgSize = TrigListPack(slbuffer, sizeof(SHAKE_LIST_ELEMENT)*stanumber_local + sizeof(SHAKE_LIST_HEADER))) > 0 ) {
+				if ( (msgSize = shakemap_tlist_pack(slbuffer, sizeof(SHAKE_LIST_ELEMENT)*stanumber_local + sizeof(SHAKE_LIST_HEADER))) > 0 ) {
 					slbuffer->trigtype = TriggerAlgType;
 					slbuffer->endtime  = timeLastTrigger;
 					timeLastTrigger   += (int)TRIGGER_MIN_INT;
@@ -355,7 +306,7 @@ int main ( int argc, char **argv )
 					if ( (trigseccount -= (int)TRIGGER_MIN_INT) == 0 ) slbuffer->codaflag = IS_CODA;
 					else slbuffer->codaflag = NO_CODA;
 
-					res = MsgEnqueue( slbuffer, msgSize );
+					res = shakemap_msgqueue_enqueue( slbuffer, msgSize );
 
 					/* PostSemaphore(); */ /* Obsoleted by Earthworm */
 					PostSpecificSemaphore_ew( SemaPtr );
@@ -365,7 +316,7 @@ int main ( int argc, char **argv )
 						/* Currently, eneueue() in mem_circ_queue.c never returns this error. */
 							sprintf(Text, "internal queue error. Terminating.");
 							shakemap_status( TypeError, ERR_QUEUE, Text );
-							EndProc();
+							shakemap_end();
 							exit(-1);
 						}
 						else if ( res == -1 ) {
@@ -383,67 +334,64 @@ int main ( int argc, char **argv )
 					}
 
 					if ( slbuffer->codaflag == IS_CODA ) {
-						TrigListDestroy();
+						shakemap_tlist_destroy();
 						memset(slbuffer, 0, sizeof(SHAKE_LIST_ELEMENT)*stanumber_local + sizeof(SHAKE_LIST_HEADER));
 					}
 				}
-				else logit( "e","shakemap: Error packing the trigger list to shake list.\n" );
+				else {
+					logit( "e","shakemap: Error packing the trigger list to shake list.\n" );
+				}
 			}
 
-		/* Get msg & check the return code from transport
-		 ************************************************/
-			res = tport_getmsg( &PeakRegion, Getlogo, nLogo, &reclogo, &msgSize, (char *)&tracepv, TRACE_PEAKVALUE_SIZE );
-
-			if ( res == GET_NONE )			/* no more new messages     */
-			{
-				PostSpecificSemaphore_ew( SemaPtr );
+		/* Get msg & check the return code from transport */
+			res = tport_getmsg(&PeakRegion, Getlogo, nLogo, &reclogo, &msgSize, (char *)&tracepv, TRACE_PEAKVALUE_SIZE);
+		/* no more new messages     */
+			if ( res == GET_NONE ) {
+				PostSpecificSemaphore_ew(SemaPtr);
 				break;
 			}
-			else if ( res == GET_TOOBIG )	/* next message was too big */
-			{								/* complain and try again   */
-				sprintf( Text,
-						"Retrieved msg[%ld] (i%u m%u t%u) too big for Buffer[%ld]",
-						msgSize, reclogo.instid, reclogo.mod, reclogo.type, (long)TRACE_PEAKVALUE_SIZE );
+		/* next message was too big */
+			else if ( res == GET_TOOBIG ) {
+			/* complain and try again   */
+				sprintf(
+					Text, "Retrieved msg[%ld] (i%u m%u t%u) too big for Buffer[%ld]",
+					msgSize, reclogo.instid, reclogo.mod, reclogo.type, (long)TRACE_PEAKVALUE_SIZE
+				);
 				shakemap_status( TypeError, ERR_TOOBIG, Text );
 				continue;
 			}
-			else if ( res == GET_MISS )		/* got a msg, but missed some */
-			{
-				sprintf( Text,
-						"Missed msg(s)  i%u m%u t%u  %s.",
-						reclogo.instid, reclogo.mod, reclogo.type, PeakRingName );
+		/* got a msg, but missed some */
+			else if ( res == GET_MISS ) {
+				sprintf(
+					Text, "Missed msg(s)  i%u m%u t%u  %s.", reclogo.instid, reclogo.mod, reclogo.type, PeakRingName
+				);
 				shakemap_status( TypeError, ERR_MISSMSG, Text );
 			}
-			else if ( res == GET_NOTRACK )	/* got a msg, but can't tell */
-			{								/* if any were missed        */
-				sprintf( Text,
-						"Msg received (i%u m%u t%u); transport.h NTRACK_GET exceeded",
-						reclogo.instid, reclogo.mod, reclogo.type );
+		/* got a msg, but can't tell */
+			else if ( res == GET_NOTRACK ) {
+			/* if any were missed        */
+				sprintf(
+					Text, "Msg received (i%u m%u t%u); transport.h NTRACK_GET exceeded",
+					reclogo.instid, reclogo.mod, reclogo.type
+				);
 				shakemap_status( TypeError, ERR_NOTRACK, Text );
 			}
 
-		/* Process the message
-		*********************/
+		/* Process the message */
 			if ( reclogo.type == TypeTracePeak ) {
 				if ( tracepv.recordtype == PeakValueType ) {
 				/* Debug */
-					/* printf("shakemap: Got a new trace peak from %s.%s.%s.%s!\n",
-						tracepv.sta, tracepv.chan, tracepv.net, tracepv.loc); */
-					strcpy(key.sta,  tracepv.sta);
-					strcpy(key.net,  tracepv.net);
-					strcpy(key.loc,  tracepv.loc);
-
-					staptr = StaListFind( &key );
-
-					if ( staptr == NULL ) {
+					//printf("shakemap: Got a new trace peak from %s.%s.%s.%s!\n",
+					//tracepv.sta, tracepv.chan, tracepv.net, tracepv.loc); */
+					if ( (staptr = shakemap_list_find( tracepv.sta, tracepv.net, tracepv.loc )) == NULL ) {
 					/* Not found in trace table */
-						/* printf("shakemap: %s.%s.%s.%s not found in station table, maybe it's a new station.\n",
-							tracepv.sta, tracepv.chan, tracepv.net, tracepv.loc); */
+						//printf("shakemap: %s.%s.%s.%s not found in station table, maybe it's a new station.\n",
+						//tracepv.sta, tracepv.chan, tracepv.net, tracepv.loc); */
 					/* Force to update the table */
-						if ( UpdateStatus == UPDATE_UNLOCK ) UpdateStatus = UPDATE_NEEDED;
+						if ( UpdateStatus == LIST_IS_UPDATED )
+							UpdateStatus = LIST_NEED_UPDATED;
 						continue;
 					}
-
 				/* Insert the triggered station pointer to the trigger list */
 					shakeptr = &staptr->shakeinfo[staptr->shakelatest];
 					tracepv.peakvalue = fabs(tracepv.peakvalue);
@@ -456,34 +404,38 @@ int main ( int argc, char **argv )
 					else if ( tracepv.peakvalue < shakeptr->peakvalue ) {
 						continue;
 					}
-
+				/* */
 					shakeptr->recordtype = tracepv.recordtype;
 					shakeptr->peakvalue  = tracepv.peakvalue;
 					shakeptr->peaktime   = tracepv.peaktime;
-					strcpy(shakeptr->peakchan, tracepv.chan);
+					memcpy(shakeptr->peakchan, tracepv.chan, TRACE2_CHAN_LEN);
 				}
 			}
-
-			/* logit( "", "%s", res ); */   /* debug */
-
-		} while( 1 );  /* end of message-processing-loop */
-
-		sleep_ew( 50 );  /* no more messages; wait for new ones to arrive */
+		} while ( 1 );  /* end of message-processing-loop */
+		sleep_ew(50);  /* no more messages; wait for new ones to arrive */
 	}
 /*-----------------------------end of main loop-------------------------------*/
+exit_procedure:
 	Finish = 0;
+	PostSpecificSemaphore_ew(SemaPtr);
+/* detach from shared memory */
 	sleep_ew(500);
-	EndProc();
+	shakemap_end();
+	KillThread(tid);
+
+	ew_unlockfile(lockfile_fd);
+	ew_unlink_lockfile(lockfile);
+
 	return 0;
 }
 
-/******************************************************************************
- *  shakemap_config() processes command file(s) using kom.c functions;       *
- *                    exits if any errors are encountered.                    *
- ******************************************************************************/
-void shakemap_config ( char *configfile )
+/*
+ * shakemap_config() - processes command file(s) using kom.c functions;
+ *                     exits if any errors are encountered.
+ */
+static void shakemap_config( char *configfile )
 {
-	char  init[11];     /* init flags, one byte for each required command */
+	char  init[16];     /* init flags, one byte for each required command */
 	char *com;
 	char *str;
 
@@ -493,124 +445,120 @@ void shakemap_config ( char *configfile )
 	uint32_t success;
 	uint32_t i;
 
-/* Set to zero one init flag for each required command
- *****************************************************/
-   ncommand = 11;
-   for( i=0; i<ncommand; i++ )  init[i] = 0;
+/* Set to zero one init flag for each required command */
+	ncommand = 16;
+	for( i = 0; i < ncommand; i++ ) {
+		if ( i < 11 )
+			init[i] = 0;
+		else
+			init[i] = 1;
+	}
+/* Open the main configuration file */
+	nfiles = k_open(configfile);
+	if ( nfiles == 0 ) {
+		logit("e", "shakemap: Error opening command file <%s>; exiting!\n", configfile);
+		exit(-1);
+	}
 
-/* Open the main configuration file
- **********************************/
-   nfiles = k_open( configfile );
-   if ( nfiles == 0 ) {
-		logit( "e",
-				"shakemap: Error opening command file <%s>; exiting!\n",
-				 configfile );
-		exit( -1 );
-   }
+/*
+ * Process all command files
+ * While there are command files open
+ */
+   	while ( nfiles > 0 ) {
+   	/* Read next line from active file  */
+   		while ( k_rd() ) {
+   		/* Get the first token from line */
+   			com = k_str();
+   		/* Ignore blank lines & comments */
+   			if ( !com )
+   				continue;
+   			if ( com[0] == '#' )
+   				continue;
 
-/* Process all command files
- ***************************/
-   while(nfiles > 0)   /* While there are command files open */
-   {
-		while(k_rd())        /* Read next line from active file  */
-		{
-			com = k_str();         /* Get the first token from line */
+   		/* Open a nested configuration file */
+   			if ( com[0] == '@' ) {
+   				success = nfiles+1;
+   				nfiles  = k_open(&com[1]);
+   				if ( nfiles != success ) {
+   					logit("e", "shakemap: Error opening command file <%s>; exiting!\n", &com[1]);
+   					exit(-1);
+   				}
+   				continue;
+   			}
 
-		/* Ignore blank lines & comments
-		 *******************************/
-			if( !com )           continue;
-			if( com[0] == '#' )  continue;
-
-		/* Open a nested configuration file
-		 **********************************/
-			if( com[0] == '@' ) {
-			   success = nfiles+1;
-			   nfiles  = k_open(&com[1]);
-			   if ( nfiles != success ) {
-				  logit( "e",
-						  "shakemap: Error opening command file <%s>; exiting!\n",
-						   &com[1] );
-				  exit( -1 );
-			   }
-			   continue;
-			}
-
-		/* Process anything else as a command
-		 ************************************/
-	/*0*/   if( k_its("LogFile") ) {
+		/* Process anything else as a command */
+		/* 0 */
+			if ( k_its("LogFile") ) {
 				LogSwitch = k_int();
 				init[0] = 1;
 			}
-	/*1*/   else if( k_its("MyModuleId") ) {
+		/* 1 */
+			else if ( k_its("MyModuleId") ) {
 				str = k_str();
-				if ( str ) strcpy( MyModName, str );
+				if ( str )
+					strcpy(MyModName, str);
 				init[1] = 1;
 			}
-	/*2*/   else if( k_its("PeakRing") ) {
+		/* 2 */
+			else if( k_its("PeakRing") ) {
 				str = k_str();
-				if ( str ) strcpy( PeakRingName, str );
+				if ( str )
+					strcpy( PeakRingName, str );
 				init[2] = 1;
 			}
-	/*3*/   else if( k_its("TrigRing") ) {
+		/* 3 */
+			else if( k_its("TrigRing") ) {
 				str = k_str();
-				if ( str ) strcpy( TrigRingName, str );
+				if ( str )
+					strcpy( TrigRingName, str );
 				init[3] = 1;
 			}
-			else if( k_its("OutputRing") ) {
+			else if ( k_its("OutputRing") ) {
 				str = k_str();
-				if ( str ) strcpy( OutRingName, str );
+				if ( str )
+					strcpy( OutRingName, str );
 				OutputMapToRingSwitch = 1;
 			}
-			else if( k_its("ListRing") ) {
-				str = k_str();
-				if ( str ) strcpy( ListRingName, str );
-				ListFromRingSwitch = 1;
-			}
-	/*4*/   else if( k_its("HeartBeatInterval") ) {
+		/* 4 */
+			else if ( k_its("HeartBeatInterval") ) {
 				HeartBeatInterval = k_long();
 				init[4] = 1;
 			}
-			else if( k_its("QueueSize") ) {
+			else if ( k_its("UpdateInterval") ) {
+				UpdateInterval = k_long();
+				if ( UpdateInterval )
+					logit(
+						"o", "shakemap: Change to auto updating mode, the updating interval is %ld seconds!\n",
+						UpdateInterval
+					);
+			}
+			else if ( k_its("QueueSize") ) {
 				QueueSize = k_long();
 				logit("o", "shakemap: Queue size change to %ld (default is 10)!\n", QueueSize);
 			}
-	/*5*/   else if( k_its("TriggerAlgType") ) {
+		/* 5 */
+			else if ( k_its("TriggerAlgType") ) {
 				TriggerAlgType = k_int();
 				logit("o", "shakemap: Trigger datatype set to %d!\n", TriggerAlgType);
 				init[5] = 1;
 			}
-	/*6*/   else if( k_its("PeakValueType") ) {
+		/* 6 */
+			else if ( k_its("PeakValueType") ) {
 				str = k_str();
 				PeakValueType = typestr2num( str );
 				logit("o", "shakemap: Peak value type set to %s:%d!\n", str, PeakValueType);
 				init[6] = 1;
 			}
-			else if( k_its("TriggerDuration") ) {
+			else if ( k_its("TriggerDuration") ) {
 				TriggerDuration = k_int();
 				logit("o", "shakemap: Trigger duration change to %ld sec (default is 30 sec)!\n", TriggerDuration);
 			}
-			else if( k_its("InterpolateDistance") ) {
+			else if ( k_its("InterpolateDistance") ) {
 				InterpolateDistance = k_val();
 				logit("o", "shakemap: Cluster max distance change to %.1lf km (default is 30.0 km)!\n", InterpolateDistance);
 			}
-	/*7*/   else if( k_its("GetListFrom") ) {
-				char tmpstr[256] = { 0 };
-
-				str = k_str();
-				if ( str ) {
-					strcpy( tmpstr, str );
-					str = k_str();
-
-					if ( str ) {
-						if ( StaListReg( tmpstr, str ) ) {
-							logit("e", "shakemap: Error occur when register station list, exiting!\n");
-							exit(-1);
-						}
-					}
-				}
-				init[7] = 1;
-			}
-	/*8*/   else if( k_its("ReportPath") ) {
+		/* 8 */
+			else if ( k_its("ReportPath") ) {
 				str = k_str();
 				if ( str ) {
 					if ( strlen(str) < MAX_PATH_STR ) {
@@ -627,7 +575,8 @@ void shakemap_config ( char *configfile )
 				}
 				init[8] = 1;
 			}
-	/*9*/   else if( k_its("MapBoundFile") ) {
+		/* 9 */
+			else if ( k_its("MapBoundFile") ) {
 				str = k_str();
 				if ( str ) {
 					FILE *filebound;
@@ -663,227 +612,364 @@ void shakemap_config ( char *configfile )
 				}
 				init[9] = 1;
 			}
-		/* Enter installation & module to get event messages from
-		********************************************************/
-	/*10*/  else if( k_its("GetEventsFrom") ) {
-				if ( nLogo+1 >= MAXLOGO ) {
-					logit( "e",
-							"shakemap: Too many <GetEventsFrom> commands in <%s>",
-							configfile );
-					logit( "e", "; max=%d; exiting!\n", (int) MAXLOGO );
-					exit( -1 );
+			else if ( k_its("SQLHost") ) {
+				str = k_str();
+				if ( str )
+					strcpy(DBInfo.host, str);
+#if defined( _USE_SQL )
+				for ( i = 11; i < ncommand; i++ )
+					init[i] = 0;
+#endif
+			}
+		/* 11 */
+			else if ( k_its("SQLPort") ) {
+				DBInfo.port = k_long();
+				init[11] = 1;
+			}
+		/* 12 */
+			else if ( k_its("SQLUser") ) {
+				str = k_str();
+				if ( str )
+					strcpy(DBInfo.user, str);
+				init[12] = 1;
+			}
+		/* 13 */
+			else if ( k_its("SQLPassword") ) {
+				str = k_str();
+				if ( str )
+					strcpy(DBInfo.password, str);
+				init[13] = 1;
+			}
+		/* 14 */
+			else if ( k_its("SQLDatabase") ) {
+				str = k_str();
+				if ( str )
+					strcpy(DBInfo.database, str);
+				init[14] = 1;
+			}
+		/* 15 */
+			else if ( k_its("SQLStationTable") ) {
+				if ( nList >= MAXLIST ) {
+					logit("e", "shakemap: Too many <SQLStationTable> commands in <%s>", configfile);
+					logit("e", "; max=%d; exiting!\n", (int)MAXLIST);
+					exit(-1);
 				}
-				if( ( str=k_str() ) ) {
-					if( GetInst( str, &Getlogo[nLogo].instid ) != 0 ) {
-						logit( "e",
-								"shakemap: Invalid installation name <%s>", str );
-						logit( "e", " in <GetEventsFrom> cmd; exiting!\n" );
-						exit( -1 );
+				if ( (str = k_str()) )
+					strcpy(SQLStationTable[nList], str);
+				nList++;
+				init[15] = 1;
+			}
+			else if ( k_its("Station") ) {
+				str = k_get();
+				for ( str += strlen(str) + 1; isspace(*str); str++ );
+				if ( shakemap_list_sta_line_parse( str, SHAKEMAP_LIST_INITIALIZING ) ) {
+					logit(
+						"e", "shakemap: ERROR, lack of some stations information for in <%s>. Exiting!\n",
+						configfile
+					);
+					exit(-1);
+				}
+			}
+		/* Enter installation & module to get event messages from */
+		/* 10 */
+			else if ( k_its("GetEventsFrom") ) {
+				if ( (nLogo + 1) >= MAXLOGO ) {
+					logit("e", "shakemap: Too many <GetEventsFrom> commands in <%s>", configfile);
+					logit("e", "; max=%d; exiting!\n", (int)MAXLOGO);
+					exit(-1);
+				}
+				if ( (str = k_str()) ) {
+					if ( GetInst(str, &Getlogo[nLogo].instid) != 0 ) {
+						logit("e", "shakemap: Invalid installation name <%s>", str);
+						logit("e", " in <GetEventsFrom> cmd; exiting!\n");
+						exit(-1);
 					}
 				}
-				if( ( str=k_str() ) ) {
-					if( GetModId( str, &Getlogo[nLogo].mod ) != 0 ) {
-						logit( "e",
-								"shakemap: Invalid module name <%s>", str );
-						logit( "e", " in <GetEventsFrom> cmd; exiting!\n" );
-						exit( -1 );
+				if ( (str = k_str()) ) {
+					if ( GetModId(str, &Getlogo[nLogo].mod) != 0 ) {
+						logit("e", "shakemap: Invalid module name <%s>", str);
+						logit("e", " in <GetEventsFrom> cmd; exiting!\n");
+						exit(-1);
 					}
 				}
-				if( ( str=k_str() ) ) {
-					if( GetType( str, &Getlogo[nLogo].type ) != 0 ) {
-						logit( "e",
-								"shakemap: Invalid message type name <%s>", str );
-						logit( "e", " in <GetEventsFrom> cmd; exiting!\n" );
-						exit( -1 );
+				if ( (str = k_str()) ) {
+					if ( GetType(str, &Getlogo[nLogo].type) != 0 ) {
+						logit("e", "shakemap: Invalid message type name <%s>", str);
+						logit("e", " in <GetEventsFrom> cmd; exiting!\n");
+						exit(-1);
 					}
 				}
 				nLogo++;
 				init[10] = 1;
-
-				/*printf("Getlogo[%d] inst:%d module:%d type:%d\n", nLogo,
-					(int)Getlogo[nLogo].instid,
-					(int)Getlogo[nLogo].mod,
-					(int)Getlogo[nLogo].type );*/   /*DEBUG*/
 			}
-
-		 /* Unknown command
-		  *****************/
+		 /* Unknown command */
 			else {
-				logit( "e", "shakemap: <%s> Unknown command in <%s>.\n",
-						 com, configfile );
+				logit("e", "shakemap: <%s> Unknown command in <%s>.\n", com, configfile);
 				continue;
 			}
 
-		/* See if there were any errors processing the command
-		 *****************************************************/
-			if( k_err() ) {
-			   logit( "e",
-					   "shakemap: Bad <%s> command in <%s>; exiting!\n",
-						com, configfile );
+		/* See if there were any errors processing the command */
+			if ( k_err() ) {
+			   logit("e", "shakemap: Bad <%s> command in <%s>; exiting!\n", com, configfile);
 			   exit( -1 );
 			}
 		}
 		nfiles = k_close();
-   }
+	}
 
-/* After all files are closed, check init flags for missed commands
- ******************************************************************/
+/* After all files are closed, check init flags for missed commands */
 	nmiss = 0;
-	for ( i=0; i<ncommand; i++ )  if( !init[i] ) nmiss++;
+	for ( i = 0; i < ncommand; i++ )
+		if ( !init[i] )
+			nmiss++;
+/* */
 	if ( nmiss ) {
-		logit( "e", "shakemap: ERROR, no " );
-		if ( !init[0] )  logit( "e", "<LogFile> "           );
-		if ( !init[1] )  logit( "e", "<MyModuleId> "        );
-		if ( !init[2] )  logit( "e", "<PeakRing> "          );
-		if ( !init[3] )  logit( "e", "<TrigRing> "          );
-		if ( !init[4] )  logit( "e", "<HeartBeatInterval> " );
-		if ( !init[5] )  logit( "e", "<TriggerAlgType> "    );
-		if ( !init[6] )  logit( "e", "<PeakValueType> "     );
-		if ( !init[7] )  logit( "e", "any <GetListFrom> "   );
-		if ( !init[8] )  logit( "e", "<ReportPath> "        );
-		if ( !init[9] )  logit( "e", "<MapBoundFile> "      );
-		if ( !init[10] ) logit( "e", "any <GetEventsFrom> " );
+		logit("e", "shakemap: ERROR, no ");
+		if ( !init[0] )  logit("e", "<LogFile> "            );
+		if ( !init[1] )  logit("e", "<MyModuleId> "         );
+		if ( !init[2] )  logit("e", "<PeakRing> "           );
+		if ( !init[3] )  logit("e", "<TrigRing> "           );
+		if ( !init[4] )  logit("e", "<HeartBeatInterval> "  );
+		if ( !init[5] )  logit("e", "<TriggerAlgType> "     );
+		if ( !init[6] )  logit("e", "<PeakValueType> "      );
+		if ( !init[8] )  logit("e", "<ReportPath> "         );
+		if ( !init[9] )  logit("e", "<MapBoundFile> "       );
+		if ( !init[10] ) logit("e", "any <GetEventsFrom> "  );
+		if ( !init[11] ) logit("e", "<SQLPort> "            );
+		if ( !init[12] ) logit("e", "<SQLUser> "            );
+		if ( !init[13] ) logit("e", "<SQLPassword> "        );
+		if ( !init[14] ) logit("e", "<SQLDatabase> "        );
+		if ( !init[15] ) logit("e", "any <SQLStationTable> ");
 
-		logit( "e", "command(s) in <%s>; exiting!\n", configfile );
-		exit( -1 );
+		logit("e", "command(s) in <%s>; exiting!\n", configfile);
+		exit(-1);
 	}
 
 	return;
 }
 
-/******************************************************************************
- *  shakemap_lookup( )   Look up important info from earthworm.h tables       *
- ******************************************************************************/
-void shakemap_lookup ( void )
+/*
+ * shakemap_lookup() - Look up important info from earthworm.h tables
+ */
+static void shakemap_lookup( void )
 {
-/* Look up keys to shared memory regions
-*************************************/
-	if( ( PeakRingKey = GetKey(PeakRingName) ) == -1 ) {
-		fprintf( stderr,
-				"shakemap:  Invalid ring name <%s>; exiting!\n", PeakRingName);
-		exit( -1 );
+/* Look up keys to shared memory regions */
+	if ( (PeakRingKey = GetKey(PeakRingName)) == -1 ) {
+		fprintf(stderr, "shakemap:  Invalid ring name <%s>; exiting!\n", PeakRingName);
+		exit(-1);
 	}
-
-	if( ( TrigRingKey = GetKey(TrigRingName) ) == -1 ) {
-		fprintf( stderr,
-				"shakemap:  Invalid ring name <%s>; exiting!\n", TrigRingName);
-		exit( -1 );
+	if ( (TrigRingKey = GetKey(TrigRingName)) == -1 ) {
+		fprintf(stderr, "shakemap:  Invalid ring name <%s>; exiting!\n", TrigRingName);
+		exit(-1);
 	}
-
-	if ( OutputMapToRingSwitch ) {
-		if( ( OutRingKey = GetKey(OutRingName) ) == -1 ) {
-			fprintf( stderr,
-					"shakemap:  Invalid ring name <%s>; exiting!\n", OutRingName);
-			exit( -1 );
-		}
+	if ( OutputMapToRingSwitch && (OutRingKey = GetKey(OutRingName)) == -1 ) {
+		fprintf(stderr, "shakemap:  Invalid ring name <%s>; exiting!\n", OutRingName);
+		exit(-1);
 	}
-
-/* Look up installations of interest
-*********************************/
-	if ( GetLocalInst( &InstId ) != 0 ) {
-		fprintf( stderr,
-				"shakemap: error getting local installation id; exiting!\n" );
-		exit( -1 );
+/* Look up installations of interest */
+	if ( GetLocalInst(&InstId) != 0 ) {
+		fprintf(stderr, "shakemap: error getting local installation id; exiting!\n");
+		exit(-1);
 	}
-
-/* Look up modules of interest
-***************************/
-	if ( GetModId( MyModName, &MyModId ) != 0 ) {
-		fprintf( stderr,
-				"shakemap: Invalid module name <%s>; exiting!\n", MyModName );
-		exit( -1 );
+/* Look up modules of interest */
+	if ( GetModId(MyModName, &MyModId) != 0 ) {
+		fprintf(stderr, "shakemap: Invalid module name <%s>; exiting!\n", MyModName);
+		exit(-1);
 	}
-
-/* Look up message types of interest
-*********************************/
-	if ( GetType( "TYPE_HEARTBEAT", &TypeHeartBeat ) != 0 ) {
-		fprintf( stderr,
-				"shakemap: Invalid message type <TYPE_HEARTBEAT>; exiting!\n" );
-		exit( -1 );
+/* Look up message types of interest */
+	if ( GetType("TYPE_HEARTBEAT", &TypeHeartBeat) != 0 ) {
+		fprintf(stderr, "shakemap: Invalid message type <TYPE_HEARTBEAT>; exiting!\n");
+		exit(-1);
 	}
-	if ( GetType( "TYPE_ERROR", &TypeError ) != 0 ) {
-		fprintf( stderr,
-				"shakemap: Invalid message type <TYPE_ERROR>; exiting!\n" );
-		exit( -1 );
+	if ( GetType("TYPE_ERROR", &TypeError) != 0 ) {
+		fprintf(stderr, "shakemap: Invalid message type <TYPE_ERROR>; exiting!\n");
+		exit(-1);
 	}
-	if ( GetType( "TYPE_TRACEPEAK", &TypeTracePeak ) != 0 ) {
-		fprintf( stderr,
-				"shakemap: Invalid message type <TYPE_TRACEPEAK>; exiting!\n" );
-		exit( -1 );
+	if ( GetType("TYPE_TRACEPEAK", &TypeTracePeak) != 0 ) {
+		fprintf(stderr, "shakemap: Invalid message type <TYPE_TRACEPEAK>; exiting!\n");
+		exit(-1);
 	}
-	if ( GetType( "TYPE_TRIGLIST", &TypeTrigList ) != 0 ) {
-		fprintf( stderr,
-				"shakemap: Invalid message type <TYPE_TRIGLIST>; exiting!\n" );
-		exit( -1 );
+	if ( GetType("TYPE_TRIGLIST", &TypeTrigList) != 0 ) {
+		fprintf(stderr, "shakemap: Invalid message type <TYPE_TRIGLIST>; exiting!\n");
+		exit(-1);
 	}
-	if ( GetType( "TYPE_GRIDMAP", &TypeGridMap ) != 0 ) {
-		fprintf( stderr,
-				"shakemap: Invalid message type <TYPE_GRIDMAP>; exiting!\n" );
-		exit( -1 );
+	if ( GetType("TYPE_GRIDMAP", &TypeGridMap) != 0 ) {
+		fprintf(stderr, "shakemap: Invalid message type <TYPE_GRIDMAP>; exiting!\n");
+		exit(-1);
 	}
 
 	return;
 }
 
-/******************************************************************************
- * shakemap_status() builds a heartbeat or error message & puts it into      *
- *                   shared memory.  Writes errors to log file & screen.      *
- ******************************************************************************/
-void shakemap_status ( unsigned char type, short ierr, char *note )
+/*
+ * shakemap_status() - builds a heartbeat or error message & puts it into
+ *                      shared memory.  Writes errors to log file & screen.
+ */
+static void shakemap_status( unsigned char type, short ierr, char *note )
 {
-   MSG_LOGO    logo;
-   char        msg[256];
-   uint64_t    size;
-   time_t      t;
+	MSG_LOGO    logo;
+	char        msg[512];
+	uint64_t    size;
+	time_t      t;
 
-/* Build the message
- *******************/
-   logo.instid = InstId;
-   logo.mod    = MyModId;
-   logo.type   = type;
+/* Build the message */
+	logo.instid = InstId;
+	logo.mod    = MyModId;
+	logo.type   = type;
 
-   time( &t );
+	time(&t);
 
-   if( type == TypeHeartBeat ) {
-		sprintf( msg, "%ld %ld\n", (long)t, (long)myPid);
-   }
-   else if( type == TypeError ) {
-		sprintf( msg, "%ld %hd %s\n", (long)t, ierr, note);
-		logit( "et", "shakemap: %s\n", note );
-   }
+	if ( type == TypeHeartBeat ) {
+		sprintf(msg, "%ld %ld\n", (long)t, (long)MyPid);
+	}
+	else if ( type == TypeError ) {
+		sprintf(msg, "%ld %hd %s\n", (long)t, ierr, note);
+		logit("et", "shakemap: %s\n", note);
+	}
 
-   size = strlen( msg );   /* don't include the null byte in the message */
+	size = strlen(msg);  /* don't include the null byte in the message */
 
-/* Write the message to shared memory
- ************************************/
-   if( tport_putmsg( &PeakRegion, &logo, size, msg ) != PUT_OK ) {
-		if( type == TypeHeartBeat ) {
-		   logit("et","shakemap:  Error sending heartbeat.\n" );
+/* Write the message to shared memory */
+	if ( tport_putmsg(&PeakRegion, &logo, size, msg) != PUT_OK ) {
+		if ( type == TypeHeartBeat ) {
+			logit("et", "shakemap:  Error sending heartbeat.\n");
 		}
-		else if( type == TypeError ) {
-		   logit("et","shakemap:  Error sending error:%d.\n", ierr );
+		else if ( type == TypeError ) {
+			logit("et", "shakemap:  Error sending error:%d.\n", ierr);
 		}
-   }
-
-   return;
-}
-
-/******************************************************************************
- * UpdateStaList() ...                      *
- ******************************************************************************/
-static void UpdateStaList ( void )
-{
-	UpdateStatus = UPDATE_PROCING;
-
-	logit("o", "shakemap: Start to updating the list of stations.\n");
-
-	if ( (TotalStations = StaListFetch()) <= 0 )
-		logit("e", "shakemap: Cannot update the list of stations.\n");
-
-/* Tell other threads that update is finshed */
-	UpdateStatus = UPDATE_UNLOCK;
+	}
 
 	return;
+}
+
+/*
+ * shakemap_end() - free all the local memory & close socket
+ */
+static void shakemap_end( void )
+{
+	Finish = 0;
+	sleep_ew( 100 );
+
+	tport_detach( &PeakRegion );
+	tport_detach( &TrigRegion );
+	if ( OutputMapToRingSwitch )
+		tport_detach( &OutRegion );
+
+	shakemap_tlist_destroy();
+	shakemap_list_end();
+	shakemap_msgqueue_end();
+	DestroySpecificSemaphore_ew( SemaPtr );
+
+	return;
+}
+
+/*
+ * update_list() -
+ */
+static void update_list( void *arg )
+{
+	int i;
+	int update_flag = 0;
+
+	logit("ot", "shakemap: Updating the channels list...\n");
+	UpdateStatus = LIST_UNDER_UPDATE;
+/* */
+	for ( i = 0; i < nList; i++ ) {
+		if ( shakemap_list_db_fetch( SQLStationTable[i], &DBInfo, SHAKEMAP_LIST_UPDATING ) < 0 ) {
+			logit("e", "shakemap: Fetching channels list(%s) from remote database error!\n", SQLStationTable[i]);
+			update_flag = 1;
+		}
+	}
+/* */
+	if ( update_list_configfile( (char *)arg ) ) {
+		logit("e", "shakemap: Fetching channels list from local file error!\n");
+		update_flag = 1;
+	}
+/* */
+	if ( update_flag ) {
+		shakemap_list_tree_abandon();
+		logit("e", "shakemap: Failed to update the channels list!\n");
+		logit("ot", "shakemap: Keep using the previous channels list(%ld)!\n", shakemap_list_timestamp_get());
+	}
+	else {
+		shakemap_list_tree_activate();
+		logit("ot", "shakemap: Successfully updated the channels list(%ld)!\n", shakemap_list_timestamp_get());
+		logit(
+			"ot", "shakemap: There are total %d channels in the new channels list.\n", shakemap_list_total_station_get()
+		);
+	}
+
+/* */
+	UpdateStatus = LIST_IS_UPDATED;
+
+	return;
+}
+
+/*
+ *
+ */
+static int update_list_configfile( char *configfile )
+{
+	char *com;
+	char *str;
+	int   nfiles;
+	int   success;
+
+/* Open the main configuration file */
+	nfiles = k_open(configfile);
+	if ( nfiles == 0 ) {
+		logit("e","shakemap: Error opening command file <%s> when updating!\n", configfile);
+		return -1;
+	}
+
+/*
+ * Process all command files
+ * While there are command files open
+ */
+   	while ( nfiles > 0 ) {
+   	/* Read next line from active file  */
+   		while ( k_rd() ) {
+   		/* Get the first token from line */
+   			com = k_str();
+   		/* Ignore blank lines & comments */
+   			if ( !com )
+   				continue;
+   			if ( com[0] == '#' )
+   				continue;
+
+   		/* Open a nested configuration file */
+   			if ( com[0] == '@' ) {
+   				success = nfiles+1;
+   				nfiles  = k_open(&com[1]);
+   				if ( nfiles != success ) {
+					logit("e", "shakemap: Error opening command file <%s> when updating!\n", &com[1]);
+					return -1;
+   				}
+   				continue;
+   			}
+
+		/* Process only "Station" command */
+			if ( k_its("Station") ) {
+				str = k_get();
+				for ( str += strlen(str) + 1; isspace(*str); str++ );
+				if ( shakemap_list_sta_line_parse( str, SHAKEMAP_LIST_UPDATING ) ) {
+					logit(
+						"e", "shakemap: Some errors occured in <%s> when updating!\n",
+						configfile
+					);
+					return -1;
+				}
+			}
+		/* See if there were any errors processing the command */
+			if ( k_err() ) {
+			   logit("e", "shakemap: Bad <%s> command in <%s> when updating!\n", com, configfile);
+			   return -1;
+			}
+		}
+		nfiles = k_close();
+	}
+
+	return 0;
 }
 
 /******************************************************************************
@@ -923,7 +1009,7 @@ static thr_ret ShakingMap ( void *dummy )
 			slbuffer = (SHAKE_LIST_HEADER *)malloc(sizeof(SHAKE_LIST_ELEMENT)*stanumber_local + sizeof(SHAKE_LIST_HEADER));
 		}
 
-		res = MsgDequeue( slbuffer, &recsize );
+		res = shakemap_msgqueue_dequeue( slbuffer, &recsize );
 
 		if ( res == 0 ) {
 			int   mm;
@@ -1147,24 +1233,4 @@ static thr_ret ShakingMap ( void *dummy )
 	ShakingMapStatus = THREAD_ERR;			/* file a complaint to the main thread */
 	KillSelfThread();						/* main thread will restart us */
 	return NULL;
-}
-
-/*************************************************************
- *  EndProc( )  free all the local memory & close queue      *
- *************************************************************/
-static void EndProc ( void )
-{
-	Finish = 0;
-	sleep_ew( 100 );
-
-	tport_detach( &PeakRegion );
-	tport_detach( &TrigRegion );
-	if ( OutputMapToRingSwitch )
-		tport_detach( &OutRegion );
-
-	TrigListDestroy();
-	StaListEnd();
-	DestroySpecificSemaphore_ew( SemaPtr );
-
-	return;
 }

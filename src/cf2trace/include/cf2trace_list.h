@@ -3,10 +3,11 @@
  */
 #pragma once
 /* */
-#include <stdint.h>
+#include <time.h>
 /* */
 #include <trace_buf.h>
 /* */
+#include <dbinfo.h>
 #include <cf2trace.h>
 
 /* */

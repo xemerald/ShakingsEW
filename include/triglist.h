@@ -66,14 +66,15 @@ typedef struct {
 } TRIGLIST_HEADER;
 
 /*
- * Definition of Station triggered information, total size is 40 bytes
+ * Definition of Station triggered information, total size is 48 bytes
  */
 typedef struct {
 	char     sta[TRACE2_STA_LEN];   /* Site name (NULL-terminated)     */
 	char     net[TRACE2_NET_LEN];   /* Network name (NULL-terminated)  */
 	char     loc[TRACE2_LOC_LEN];   /* Location code (NULL-terminated) */
 	char     pchan[TRACE2_CHAN_LEN];
-/* Padding? */
+
+	uint8_t  padding[5];   /* Padding? */
 	uint16_t seq;          /* Sequence number of station      */
 	uint16_t datatype;     /* Flag for record type            */
 	double   ptime;        /* Time of peak sample or pick time in epoch seconds               */

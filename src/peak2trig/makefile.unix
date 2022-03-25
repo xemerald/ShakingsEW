@@ -1,11 +1,12 @@
 #
 #
 #
-CFLAGS = $(GLOBALFLAGS) -O3 -g -I../../include -I./include -flto
-LIBS = -lm -lpthread -lrt $(MT_FLAG)
+CFLAGS = $(GLOBALFLAGS) -O3 -g -I/usr/include/mysql -I../../include -I./include -flto -D_USE_SQL
+LIBS = -lm -lpthread -lmysqlclient -lrt $(MT_FLAG)
 
 EW_BINDIR = $(EW_HOME)/$(EW_VERSION)/bin
 EW_LIBDIR = $(EW_HOME)/$(EW_VERSION)/lib
+LC_LIBDIR = ../../lib
 
 #
 #
@@ -13,24 +14,23 @@ EW_LIBDIR = $(EW_HOME)/$(EW_VERSION)/lib
 EWLIBS = $(EW_LIBDIR)/lockfile_ew.o $(EW_LIBDIR)/lockfile.o \
          $(EW_LIBDIR)/mem_circ_queue.o $(EW_LIBDIR)/libew_mt.a
 
-EEWLIBS = ../../lib/libslist.a ../../lib/libmisc.a
+LCLIBS = $(LC_LIBDIR)/libshakings.a $(LC_LIBDIR)/libdl_chain_list.a
 
 #
 #
 #
-OBJS = peak2trig.o peak2trig_list.o peak2trig_triglist.o
-
-#
-# Default target for this makefile
-#
-default: ver_709
+OBJS = \
+	peak2trig.o \
+	peak2trig_misc.o \
+	peak2trig_list.o \
+	peak2trig_triglist.o
 
 #
 # Compile rule for peak2trig module
 #
-peak2trig: $(EWLIBS) $(OBJS)
+peak2trig: $(OBJS)
 	@echo Creating $@...
-	@$(CC) $(CFLAGS) -o $(EW_BINDIR)/$@ $(OBJS) $(EWLIBS) $(EEWLIBS) $(LIBS)
+	@$(CC) $(CFLAGS) -o $(EW_BINDIR)/$@ $(OBJS) $(EWLIBS) $(LCLIBS) $(LIBS)
 
 #
 # Compile rule for Earthworm version under 7.09

@@ -19,10 +19,8 @@
 #include <swap.h>
 /* Local header include */
 #include <dbinfo.h>
-#include <dblist.h>
 #include <cf2trace.h>
 #include <cf2trace_list.h>
-
 
 /* Functions prototype in this source file */
 static void cf2trace_config( char * );
@@ -134,7 +132,7 @@ int main ( int argc, char **argv )
 		exit(-1);
 	}
 	else {
-		logit("o", "cf2trace: There are total %d channels in the list.\n", i);
+		logit("o", "cf2trace: There are total %d channel(s) in the list.\n", i);
 		cf2tra_list_tree_activate();
 	}
 /* Look up important info from earthworm.h tables */
@@ -335,7 +333,7 @@ static void cf2trace_config( char *configfile )
 			init[i] = 1;
 	}
 /* Open the main configuration file */
-	nfiles = k_open( configfile );
+	nfiles = k_open(configfile);
 	if ( nfiles == 0 ) {
 		logit("e", "cf2trace: Error opening command file <%s>; exiting!\n", configfile);
 		exit(-1);
@@ -449,9 +447,8 @@ static void cf2trace_config( char *configfile )
 					logit("e", "; max=%d; exiting!\n", (int)MAXLIST);
 					exit(-1);
 				}
-				if ( (str = k_str()) ) {
+				if ( (str = k_str()) )
 					strcpy(SQLChannelTable[nList], str);
-				}
 				nList++;
 				init[10] = 1;
 			}
@@ -468,7 +465,7 @@ static void cf2trace_config( char *configfile )
 			}
 		/* Enter installation & module to get event messages from */
 		/* 5 */
-			else if( k_its("GetEventsFrom") ) {
+			else if ( k_its("GetEventsFrom") ) {
 				if ( (nLogo + 1) >= MAXLOGO ) {
 					logit("e", "cf2trace: Too many <GetEventsFrom> commands in <%s>", configfile);
 					logit("e", "; max=%d; exiting!\n", (int)MAXLOGO);
@@ -521,17 +518,17 @@ static void cf2trace_config( char *configfile )
 /* */
 	if ( nmiss ) {
 		logit("e", "cf2trace: ERROR, no ");
-		if ( !init[0] )  logit( "e", "<LogFile> "            );
-		if ( !init[1] )  logit( "e", "<MyModuleId> "         );
-		if ( !init[2] )  logit( "e", "<InWaveRing> "         );
-		if ( !init[3] )  logit( "e", "<OutWaveRing> "        );
-		if ( !init[4] )  logit( "e", "<HeartBeatInterval> "  );
-		if ( !init[5] )  logit( "e", "any <GetEventsFrom> "  );
-		if ( !init[6] )  logit( "e", "<SQLPort> "            );
-		if ( !init[7] )  logit( "e", "<SQLUser> "            );
-		if ( !init[8] )  logit( "e", "<SQLPassword> "        );
-		if ( !init[9] )  logit( "e", "<SQLDatabase> "        );
-		if ( !init[10] ) logit( "e", "any <SQLChannelTable> ");
+		if ( !init[0] )  logit("e", "<LogFile> "            );
+		if ( !init[1] )  logit("e", "<MyModuleId> "         );
+		if ( !init[2] )  logit("e", "<InWaveRing> "         );
+		if ( !init[3] )  logit("e", "<OutWaveRing> "        );
+		if ( !init[4] )  logit("e", "<HeartBeatInterval> "  );
+		if ( !init[5] )  logit("e", "any <GetEventsFrom> "  );
+		if ( !init[6] )  logit("e", "<SQLPort> "            );
+		if ( !init[7] )  logit("e", "<SQLUser> "            );
+		if ( !init[8] )  logit("e", "<SQLPassword> "        );
+		if ( !init[9] )  logit("e", "<SQLDatabase> "        );
+		if ( !init[10] ) logit("e", "any <SQLChannelTable> ");
 
 		logit("e", "command(s) in <%s>; exiting!\n", configfile);
 		exit(-1);
@@ -602,7 +599,7 @@ static void cf2trace_status( unsigned char type, short ierr, char *note )
 	if ( type == TypeHeartBeat ) {
 		sprintf(msg, "%ld %ld\n", (long)t, (long)MyPid);
 	}
-	else if( type == TypeError ) {
+	else if ( type == TypeError ) {
 		sprintf(msg, "%ld %hd %s\n", (long)t, ierr, note);
 		logit("et", "cf2trace: %s\n", note);
 	}
@@ -689,7 +686,7 @@ static int update_list_configfile( char *configfile )
 	int   success;
 
 /* Open the main configuration file */
-	nfiles = k_open( configfile );
+	nfiles = k_open(configfile);
 	if ( nfiles == 0 ) {
 		logit("e","cf2trace: Error opening command file <%s> when updating!\n", configfile);
 		return -1;

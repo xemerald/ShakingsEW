@@ -1,12 +1,14 @@
+/*
+ *
+ */
 #pragma once
-
+/* */
 #include <stdint.h>
-
 /* Local header include */
-#include <stalist.h>
+#include <trace_buf.h>
 #include <tracepeak.h>
 #include <peak2trig.h>
-
+/* */
 #define CLUSTER_NUM 2
 
 typedef struct sta_node {
@@ -14,7 +16,7 @@ typedef struct sta_node {
 
 	uint16_t         padding;
 	uint16_t         recordtype;
-	char             peakchan[CHAN_CODE_LEN];
+	char             peakchan[TRACE2_CHAN_LEN];
 	double           peakvalue;
 	double           peaktime;
 
@@ -23,16 +25,14 @@ typedef struct sta_node {
 } STA_NODE;
 
 /* Function prototype */
-STA_NODE *TrigListInsert( const _STAINFO * );
-STA_NODE *TrigListFind( const _STAINFO * );
-STA_NODE *TrigListDelete( const _STAINFO * );
-STA_NODE *TrigListUpdate( const TRACE_PEAKVALUE *, STA_NODE * );
+STA_NODE *peak2trig_tlist_insert( const _STAINFO * );
+STA_NODE *peak2trig_tlist_find( const _STAINFO * );
+STA_NODE *peak2trig_tlist_delete( const _STAINFO * );
+STA_NODE *peak2trig_tlist_update( const TRACE_PEAKVALUE *, STA_NODE * );
 
-int TrigListLength( void );
-int TrigListCluster( const double, const double );
-
-void TrigListWalk( void (*)(const void *) );
-void TrigListTimeFilter( const double );
-void TrigListDestroy ( void );
-
-int TrigListPack( void *, size_t );
+int  peak2trig_tlist_len_get( void );
+int  peak2trig_tlist_cluster( const double, const double );
+int  peak2trig_tlist_pack( void *, size_t, const uint8_t );
+void peak2trig_tlist_walk( void (*)(const void *) );
+void peak2trig_tlist_time_filter( const double );
+void peak2trig_tlist_destroy( void );

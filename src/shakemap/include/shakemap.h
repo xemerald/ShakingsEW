@@ -1,24 +1,31 @@
+/*
+ *
+ */
 #pragma once
-
-#include <stalist.h>
-
+/* */
+#include <stdint.h>
+#include <time.h>
+/* */
+#include <trace_buf.h>
+/* */
 #define  SHAKE_BUF_LEN    30
 #define  TRIGGER_MIN_INT  1
-
+/* */
+#define SHAKEMAP_INFO_FROM_SQL  6
 /* Shaking information related struct */
 typedef struct {
 	uint16_t recordtype;
 	uint8_t  padding[2];
-	char     peakchan[CHAN_CODE_LEN];
+	char     peakchan[TRACE2_CHAN_LEN];
 	double   peakvalue;
 	double   peaktime;
 } STA_SHAKE;
 
 /* Station info related struct */
 typedef struct {
-	char sta[STA_CODE_LEN];   /* Site name (NULL-terminated) */
-	char net[NET_CODE_LEN];   /* Network name (NULL-terminated) */
-	char loc[LOC_CODE_LEN];   /* Location code (NULL-terminated) */
+	char sta[TRACE2_STA_LEN];   /* Site name (NULL-terminated) */
+	char net[TRACE2_NET_LEN];   /* Network name (NULL-terminated) */
+	char loc[TRACE2_LOC_LEN];   /* Location code (NULL-terminated) */
 
 	double latitude;      /* Latitude of station */
 	double longitude;     /* Longitude of station */

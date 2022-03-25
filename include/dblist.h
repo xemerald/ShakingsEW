@@ -17,11 +17,14 @@
 #include <dbinfo.h>
 
 #define COL_STA_LIST_TABLE \
-		X(COL_STA_SERIAL,   "serial"  ) \
-		X(COL_STA_STATION,  "station" ) \
-		X(COL_STA_NETWORK,  "network" ) \
-		X(COL_STA_LOCATION, "location") \
-		X(COL_STA_LIST_COUNT, "NULL"  )
+		X(COL_STA_SERIAL,     "serial"   ) \
+		X(COL_STA_STATION,    "station"  ) \
+		X(COL_STA_NETWORK,    "network"  ) \
+		X(COL_STA_LOCATION,   "location" ) \
+		X(COL_STA_LONGITUDE,  "longitude") \
+		X(COL_STA_LATITUDE,   "latitude" ) \
+		X(COL_STA_ELEVATION,  "elevation") \
+		X(COL_STA_LIST_COUNT, "NULL"     )
 
 #define X(a, b) a,
 typedef enum {

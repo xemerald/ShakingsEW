@@ -156,7 +156,7 @@ void cf2tra_list_tree_activate( void )
 }
 
 /*
- * cf2tra_list_tree_activate() -
+ * cf2tra_list_tree_abandon() -
  */
 void cf2tra_list_tree_abandon( void )
 {
@@ -286,7 +286,7 @@ static void extract_traceinfo_mysql(
 static int fetch_list_sql( TraceList *list, const char *table_chan, const DBINFO *dbinfo, const int update )
 {
 	printf(
-		"cf2trace: Skip the process of fetching station list from remote database "
+		"cf2trace: Skip the process of fetching channel list from remote database "
 		"'cause you did not define the _USE_SQL tag when compiling.\n"
 	);
 	return 0;
@@ -359,7 +359,7 @@ static _TRACEINFO *append_traceinfo_list( TraceList *list, _TRACEINFO *traceinfo
 				"o", "cf2trace: SCNL(%s.%s.%s.%s) is already in the list, skip it!\n",
 				traceinfo->sta, traceinfo->chan, traceinfo->net, traceinfo->loc
 			);
-			free( traceinfo );
+			free(traceinfo);
 		}
 	}
 
