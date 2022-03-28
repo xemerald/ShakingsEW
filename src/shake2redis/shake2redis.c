@@ -910,10 +910,15 @@ static int is_single_pvalue_sync( const STATION_PEAK *stapeak, const int pvalue_
 /* */
 	for ( current = stapeak->chlist[pvalue_i]; current != NULL; current = DL_NODE_GET_NEXT( current ) ) {
 		chapeak = (CHAN_PEAK *)DL_NODE_GET_DATA( current );
-		if ( _ptime == 0 )
+		if ( _ptime == 0 ) {
 			_ptime = (time_t)chapeak->ptime;
-		else if ( (time_t)chapeak->ptime != _ptime )
+		}
+		else if ( (time_t)chapeak->ptime != _ptime ) {
+		/* We should drop the channel that has already stopped for over LATENCY_THRESHOLD */
+			if ( (time(NULL) - (time_t)chapeak->ptime) > LATENCY_THRESHOLD )
+				dl_node_delete( current, free );
 			return 0;
+		}
 	}
 
 	return 1;

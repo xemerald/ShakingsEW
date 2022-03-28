@@ -36,9 +36,16 @@ static void shakemap_lookup( void );
 static void shakemap_status( unsigned char, short, char * );
 static void shakemap_end( void );                /* Free all the local memory & close socket */
 
+static thr_ret thread_shakingmap( void * );
+
 static void update_list ( void * );
 static int  update_list_configfile( char * );
-static thr_ret ShakingMap ( void * );
+static void cal_mag_values(
+	GRIDMAP_HEADER *, const uint32_t, const uint32_t, const uint32_t, const uint32_t
+);
+static void output_result_file(
+	const GRIDMAP_HEADER *, const uint32_t, const uint32_t, const uint32_t, const uint32_t, const uint32_t
+);
 
 /* Ring messages things */
 static SHM_INFO PeakRegion;    /* shared memory region to use for i/o    */
@@ -235,8 +242,8 @@ int main ( int argc, char **argv )
 		}
 
 		if ( ShakingMapStatus != THREAD_ALIVE && Finish ) {
-			if ( StartThread( ShakingMap, (unsigned)THREAD_STACK, &tid ) == -1 ) {
-				logit( "e", "shakemap: Error starting ShakingMap thread; exiting!\n");
+			if ( StartThread( thread_shakingmap, (unsigned)THREAD_STACK, &tid ) == -1 ) {
+				logit( "e", "shakemap: Error starting thread(thread_shakingmap); exiting!\n");
 				shakemap_end();
 				exit(-1);
 			}
@@ -973,10 +980,10 @@ static int update_list_configfile( char *configfile )
 }
 
 /******************************************************************************
- * ShakingMap() Read the station info from the array <stainfo>. And creates   *
+ * thread_shakingmap() Read the station info from the array <stainfo>. And creates   *
  *              the table of shakemap of Taiwan.                              *
  ******************************************************************************/
-static thr_ret ShakingMap ( void *dummy )
+static thr_ret thread_shakingmap ( void *dummy )
 {
 	int      res;
 	long     recsize;            /* Size of retrieved message from queue */
@@ -1014,30 +1021,17 @@ static thr_ret ShakingMap ( void *dummy )
 		if ( res == 0 ) {
 			int   mm;
 
-			_STAINFO  *staptr = NULL;
-			FILE      *evfptr;
-			struct tm *tp = gmtime( &(slbuffer->endtime) );
-
-			char eventfile[MAX_PATH_STR] = { 0 };
-			char reportdate[MAX_DSTR_LENGTH] = { 0 };
-			char rsec[3] = { 0 };
+			_STAINFO *staptr = NULL;
 
 			uint32_t putsize;
-			uint32_t count_25 = 0, count_80 = 0;
-			uint32_t count_250 = 0, count_400 = 0;
+			uint32_t area_25 = 0, area_80 = 0;
+			uint32_t area_250 = 0, area_400 = 0;
 
 			double lonmax = 0.0, lonmin = 180.0;
 			double latmax = 0.0, latmin = 90.0;
 			double tmplat = 0.0, tmplon = 0.0;
 			double dissum = 0.0, valsum = 0.0, voverd = 0.0;
 			double dists = 0.0;
-
-		/* Generate the report file name by the present time */
-			date2spstring( tp, reportdate, sizeof(reportdate) );
-			memset(&reportdate[12], 0, 3);
-
-		/* Generate the second string */
-			sprintf(rsec, "%02d", tp->tm_sec);
 
 		/* Fill in the information for grid map message header */
 			gmbuffer->evaltype  = EVALUATE_REALSHAKE;
@@ -1118,12 +1112,12 @@ static thr_ret ShakingMap ( void *dummy )
 					/* If the grid value is PGA, we can also derive the magnitude */
 						if ( PeakValueType == RECORD_ACCELERATION ) {
 							if ( voverd >= 80.0 ) {
-								count_25++;
+								area_25++;
 								if ( voverd >= 110.0 ) {
-									count_80++;
+									area_80++;
 									if ( voverd >= 370.0 ) {
-										count_250++;
-										if ( voverd >= 400.0 ) count_400++;
+										area_250++;
+										if ( voverd >= 400.0 ) area_400++;
 									}
 								}
 							}
@@ -1148,79 +1142,27 @@ static thr_ret ShakingMap ( void *dummy )
 				} /* Latitude */
 			} /* Longitude */
 
-		/* Calculate the estimated magnitude */
-			if ( count_25 ) {
-				gmbuffer->magnitude[0] = (0.002248 * 80 + 0.279229) * log10(count_25*25) + 4.236343;
-				/* mag25 = (0.001949 * 80 + 0.271711) * log10(count_25*25) + 4.455552; */
-				if ( count_80 ) {
-					gmbuffer->magnitude[1] = (0.002248 * 110 + 0.279229) * log10(count_80*25) + 4.236343;
-					/* mag80 = (0.001949 * 110 + 0.271711) * log10(count_80*25) + 4.455552; */
-					if ( count_250 ) {
-						gmbuffer->magnitude[2] = (0.002248 * 370 + 0.279229) * log10(count_250*25) + 4.236343;
-						/* mag250 = (0.001949 * 370 + 0.271711) * log10(count_250*25) + 4.455552; */
-						if ( count_400 ) {
-							gmbuffer->magnitude[3] = (0.002248 * 400 + 0.279229) * log10(count_400*25) + 4.236343;
-							/* mag400 = (0.001949 * 400 + 0.271711) * log10(count_400*25) + 4.455552; */
-						}
-					}
-				}
-			}
+		/* Calculate the estimated magnitude by cover areas */
+			area_25  *= 25;
+			area_80  *= 25;
+			area_250 *= 25;
+			area_400 *= 25;
+			cal_mag_values( gmbuffer, area_25, area_80, area_250, area_400 );
 
 		/* Output the the whole shakemap data to share ring */
 			if ( OutputMapToRingSwitch ) {
 				putsize = sizeof(GRIDMAP_HEADER) + sizeof(GRID_REC) * gmbuffer->totalgrids;
-				if ( tport_putmsg( &OutRegion, &Putlogo, putsize, (char *)gmbuffer ) != PUT_OK ) {
-					logit( "e", "shakemap: Error putting message in region %ld\n", OutRegion.key );
-				}
+				if ( tport_putmsg(&OutRegion, &Putlogo, putsize, (char *)gmbuffer ) != PUT_OK)
+					logit("e", "shakemap: Error putting message in region %ld\n", OutRegion.key);
 			}
 
 			if ( gmbuffer->starttime == gmbuffer->endtime )
-				logit( "ot", "New event detected, start generating grid map!\n" );
-
-		/* Output the triggered stations table */
-			sprintf( eventfile, "%s%s_%s_sta.txt", ReportPath, reportdate, typenum2str( gmbuffer->valuetype ) );
-			evfptr  = fopen( eventfile, "a" );
-
-			gridrec = (GRID_REC *)(gmbuffer + 1);
-			gridend = gridrec + gmbuffer->totalgrids;
-			for ( ; gridrec->gridtype == GRID_STATION && gridrec < gridend; gridrec++ ) {
-				fprintf( evfptr, "%s %6.2f %6.2f %6.2f %s\n",
-					gridrec->gridname, gridrec->longitude, gridrec->latitude, gridrec->gridvalue, rsec );
-			}
-
-			fclose( evfptr );
-
-		/* Check if the grid record type is GRID_MAPGRID */
-			for ( ; gridrec->gridtype != GRID_MAPGRID && gridrec < gridend; gridrec++ );
-			if ( gridrec >= gridend ) {
-				logit( "t", "shakemap: There is not any map grid data!\n" );
-				continue;
-			}
-
-		/* Output the peak value data of triggered grid */
-			sprintf( eventfile, "%s%s_%s.txt", ReportPath, reportdate, typenum2str( gmbuffer->valuetype ) );
-			evfptr = fopen( eventfile, "a" );
-
-			for ( ; gridrec->gridtype == GRID_MAPGRID && gridrec < gridend; gridrec++ ) {
-				fprintf( evfptr, "%6.2f %6.2f %8.3f %s\n",
-					gridrec->longitude, gridrec->latitude, gridrec->gridvalue, rsec );
-			}
-
-			fclose( evfptr );
-
-		/* Output the estimated magnitude record */
-			if ( count_25 ) {
-				sprintf( eventfile, "%s%s_mag.txt", ReportPath, reportdate );
-				evfptr = fopen( eventfile, "a" );
-
-				fprintf( evfptr, "%4.1f %4.1f %4.1f %4.1f %4d %4d %4d %4d %3d %6.2f %5.2f %6.2f %s\n",
-					gmbuffer->magnitude[0], gmbuffer->magnitude[1], gmbuffer->magnitude[2], gmbuffer->magnitude[3],
-					count_25*25, count_80*25, count_250*25, count_400*25, slbuffer->totalstations,
-					gmbuffer->centerlon, gmbuffer->centerlat, gmbuffer->centervalue, rsec );
-
-				fclose( evfptr );
-			}
-
+				logit("ot", "New event detected, start generating grid map!\n");
+		/* Output this result to the local files in text format */
+			output_result_file(
+				gmbuffer, slbuffer->totalstations, area_25, area_80, area_250, area_400
+			);
+		/* */
 			memset(gmbuffer, 0, MAX_GRIDMAP_SIZ);
 		}
 	} while( Finish );
@@ -1233,4 +1175,177 @@ static thr_ret ShakingMap ( void *dummy )
 	ShakingMapStatus = THREAD_ERR;			/* file a complaint to the main thread */
 	KillSelfThread();						/* main thread will restart us */
 	return NULL;
+}
+
+/*
+ *
+ */
+static void cal_map_grids_data()
+{
+
+/* Calculate the grid data */
+/* Longitude */
+	for ( tmplon = lonmin; tmplon <= lonmax; tmplon += 0.05 ) {
+	/* Latitude */
+		for ( tmplat = latmin; tmplat <= latmax; tmplat += 0.05 ) {
+		/* Check if inside the given boundary */
+			if ( locpt((float)tmplon, (float)tmplat, X, Y, BoundPointCount, &mm) > -1 ) {
+			/* Using the inverse distance weighting method to calculate the value of each grid */
+				dissum = 0.0;
+				valsum = 0.0;
+				voverd = 0.0;
+
+				slelement = (SHAKE_LIST_ELEMENT *)(slbuffer + 1);
+
+				for ( ; slelement<slend; slelement++ ) {
+					staptr = slelement->staptr;
+
+					if ( (dists = coor2distf(tmplat, tmplon, staptr->latitude, staptr->longitude)) < InterpolateDistance ) {
+					/* If the distance between station and grid is neglectable, just add epsilon (about 10^-6) to the distance */
+						if ( dists < DBL_EPSILON )
+							dists += FLT_EPSILON;
+					/* Otherwise, just follow the IDW method */
+						dists *= dists;
+						valsum += slelement->shakeinfo.peakvalue / dists;
+						dissum += 1.0 / dists;
+					}
+				}
+
+				voverd = valsum/dissum;
+
+			/* Find out the grid with maximum value */
+				if( voverd > gmbuffer->centervalue ) {
+					gmbuffer->centervalue = voverd;
+					gmbuffer->centerlat   = tmplat;
+					gmbuffer->centerlon   = tmplon;
+				}
+
+			/* If the grid value is PGA, we can also derive the magnitude */
+				if ( PeakValueType == RECORD_ACCELERATION ) {
+					if ( voverd >= 80.0 ) {
+						area_25++;
+						if ( voverd >= 110.0 ) {
+							area_80++;
+							if ( voverd >= 370.0 ) {
+								area_250++;
+								if ( voverd >= 400.0 ) area_400++;
+							}
+						}
+					}
+				}
+
+			/* If the grid value is not zero, save to the grid map message */
+				if ( voverd > DBL_EPSILON ) {
+					gridrec->gridname[0] = '\0';
+					gridrec->gridtype    = GRID_MAPGRID;
+					gridrec->longitude   = tmplon;
+					gridrec->latitude    = tmplat;
+					gridrec->gridvalue   = voverd;
+
+					if ( ++gridrec >= gridend ) {
+						logit( "e", "shakemap: Grid number over the maximum, maximum is %d!\n", MAX_GRID_NUM );
+						break;
+					}
+
+					gmbuffer->totalgrids++;
+				}
+			}
+		} /* Latitude */
+	} /* Longitude */
+
+	return;
+}
+
+/*
+ *
+ */
+static void cal_mag_values(
+	GRIDMAP_HEADER *gmh, const uint32_t area_25, const uint32_t area_80,
+	const uint32_t area_250, const uint32_t area_400
+) {
+/* Calculate the estimated magnitude */
+	if ( area_25 )
+		gmh->magnitude[0] = (0.002248 * 80 + 0.279229) * log10(area_25) + 4.236343;
+		/* gmh->magnitude[0] = (0.001949 * 80 + 0.271711) * log10(area_25*25) + 4.455552; */
+	if ( area_80 )
+		gmh->magnitude[1] = (0.002248 * 110 + 0.279229) * log10(area_80) + 4.236343;
+		/* gmh->magnitude[1] = (0.001949 * 110 + 0.271711) * log10(area_80*25) + 4.455552; */
+	if ( area_250 )
+		gmh->magnitude[2] = (0.002248 * 370 + 0.279229) * log10(area_250) + 4.236343;
+		/* gmh->magnitude[2] = (0.001949 * 370 + 0.271711) * log10(area_250*25) + 4.455552; */
+	if ( area_400 )
+		gmh->magnitude[3] = (0.002248 * 400 + 0.279229) * log10(area_400) + 4.236343;
+		/* gmh->magnitude[3] = (0.001949 * 400 + 0.271711) * log10(area_400*25) + 4.455552; */
+
+	return;
+}
+
+/*
+ *
+ */
+static void output_result_file(
+	const GRIDMAP_HEADER *gmh, const uint32_t totalstations, const uint32_t area_25,
+	const uint32_t area_80, const uint32_t area_250, const uint32_t area_400
+) {
+	FILE      *fd;
+	struct tm *tp = gmtime(&gmh->endtime);
+
+	char      filename[MAX_PATH_STR] = { 0 };
+	char      datetime[MAX_DSTR_LENGTH] = { 0 };
+	char      rsec[3] = { 0 };
+	GRID_REC *gridrec = NULL;
+	GRID_REC *gridend = NULL;
+
+/* Generate the report file name by the present time */
+	date2spstring( tp, datetime, sizeof(datetime) );
+/* We only use the datetime string like YYYYMMDDHHMM, therefore drop the second part */
+	datetime[12] = '\0';
+/* Generate the second string */
+	sprintf(rsec, "%02d", tp->tm_sec);
+
+/* Output the triggered stations table */
+	sprintf(filename, "%s%s_%s_sta.txt", ReportPath, datetime, typenum2str( gmh->valuetype ));
+	fd  = fopen(filename, "a");
+	gridrec = (GRID_REC *)(gmh + 1);
+	gridend = gridrec + gmh->totalgrids;
+	for ( ; gridrec->gridtype == GRID_STATION && gridrec < gridend; gridrec++ ) {
+		fprintf(
+			fd, "%s %6.2f %6.2f %6.2f %s\n",
+			gridrec->gridname, gridrec->longitude, gridrec->latitude, gridrec->gridvalue, rsec
+		);
+	}
+	fclose(fd);
+
+/* Check if the grid record type is GRID_MAPGRID */
+	for ( ; gridrec->gridtype != GRID_MAPGRID && gridrec < gridend; gridrec++ );
+	if ( gridrec >= gridend ) {
+		logit( "t", "shakemap: There is not any map grid data!\n" );
+	}
+	else {
+	/* Output the peak value data of triggered grid */
+		sprintf(filename, "%s%s_%s.txt", ReportPath, datetime, typenum2str( gmh->valuetype ));
+		fd = fopen(filename, "a");
+		for ( ; gridrec->gridtype == GRID_MAPGRID && gridrec < gridend; gridrec++ ) {
+			fprintf(
+				fd, "%6.2f %6.2f %8.3f %s\n",
+				gridrec->longitude, gridrec->latitude, gridrec->gridvalue, rsec
+			);
+		}
+		fclose(fd);
+	}
+
+/* Output the estimated magnitude record */
+	if ( area_25 ) {
+		sprintf(filename, "%s%s_mag.txt", ReportPath, datetime);
+		fd = fopen(filename, "a");
+		fprintf(
+			fd, "%4.1f %4.1f %4.1f %4.1f %4d %4d %4d %4d %3d %6.2f %5.2f %6.2f %s\n",
+			gmh->magnitude[0], gmh->magnitude[1], gmh->magnitude[2], gmh->magnitude[3],
+			area_25, area_80, area_250, area_400, totalstations,
+			gmh->centerlon, gmh->centerlat, gmh->centervalue, rsec
+		);
+		fclose(fd);
+	}
+
+	return;
 }
