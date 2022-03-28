@@ -871,31 +871,31 @@ static void update_list( void *arg )
 	int i;
 	int update_flag = 0;
 
-	logit("ot", "shakemap: Updating the channels list...\n");
+	logit("ot", "shakemap: Updating the stations list...\n");
 	UpdateStatus = LIST_UNDER_UPDATE;
 /* */
 	for ( i = 0; i < nList; i++ ) {
 		if ( shakemap_list_db_fetch( SQLStationTable[i], &DBInfo, SHAKEMAP_LIST_UPDATING ) < 0 ) {
-			logit("e", "shakemap: Fetching channels list(%s) from remote database error!\n", SQLStationTable[i]);
+			logit("e", "shakemap: Fetching stations list(%s) from remote database error!\n", SQLStationTable[i]);
 			update_flag = 1;
 		}
 	}
 /* */
 	if ( update_list_configfile( (char *)arg ) ) {
-		logit("e", "shakemap: Fetching channels list from local file error!\n");
+		logit("e", "shakemap: Fetching stations list from local file error!\n");
 		update_flag = 1;
 	}
 /* */
 	if ( update_flag ) {
 		shakemap_list_tree_abandon();
-		logit("e", "shakemap: Failed to update the channels list!\n");
-		logit("ot", "shakemap: Keep using the previous channels list(%ld)!\n", shakemap_list_timestamp_get());
+		logit("e", "shakemap: Failed to update the stations list!\n");
+		logit("ot", "shakemap: Keep using the previous stations list(%ld)!\n", shakemap_list_timestamp_get());
 	}
 	else {
 		shakemap_list_tree_activate();
-		logit("ot", "shakemap: Successfully updated the channels list(%ld)!\n", shakemap_list_timestamp_get());
+		logit("ot", "shakemap: Successfully updated the stations list(%ld)!\n", shakemap_list_timestamp_get());
 		logit(
-			"ot", "shakemap: There are total %d channels in the new channels list.\n", shakemap_list_total_station_get()
+			"ot", "shakemap: There are total %d stations in the new stations list.\n", shakemap_list_total_station_get()
 		);
 	}
 
