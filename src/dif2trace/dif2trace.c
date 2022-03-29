@@ -241,8 +241,8 @@ int main ( int argc, char **argv )
 					!scnlfilter_apply( tracebuffer.msg, recsize, reclogo.type, NULL, NULL, NULL )
 				) {
 				/* Debug */
-					printf("dif2trace: Found SCNL %s.%s.%s.%s but not in the filter, drop it!\n",
-					tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc);
+					//printf("dif2trace: Found SCNL %s.%s.%s.%s but not in the filter, drop it!\n",
+					//tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc);
 					continue;
 				}
 			/* */
