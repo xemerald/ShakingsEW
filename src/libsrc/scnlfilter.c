@@ -65,6 +65,7 @@ static int          remap_tracebuf2_scnl( const SCNL_Filter *, TRACE2_HEADER * )
 static double       get_wavetime( TRACE2_HEADER * );
 static char        *copytrim( char *, char *, int );
 static SCNL_Filter *realloc_scnlf_list( const char * );
+static void         swap_double( double * );
 static int          compare_scnl( const void *s1, const void *s2 );  /* qsort & bsearch */
 
 /* Globals for site-comp-net-loc filter */
@@ -296,8 +297,7 @@ int scnlfilter_init( const char *prog )
  *   20020319 dbh Changed the return code handling
  */
 int scnlfilter_apply(
-	void  *inmsg,  size_t inlen,   unsigned char  intype,
-	void **outmsg, size_t *outlen, unsigned char *outtype
+	void *inmsg, size_t inlen, unsigned char intype, void *outmsg, size_t *outlen, unsigned char *outtype
 ) {
 	int            i;
 	TRACE_HEADER  *thd;
@@ -365,19 +365,20 @@ int scnlfilter_apply(
  * Found a message we want to ship!
  * Do some extra checks for trace data only
  */
+	if ( outmsg ) {
+	/* Copy message to output buffer */
+		memcpy(outmsg, inmsg, inlen);
+		*outlen  = inlen;
+		*outtype = intype;
+		thd  = (TRACE_HEADER *)outmsg;
+		thd2 = (TRACE2_HEADER *)outmsg;
+	}
 	if ( match->remap ) {
 	/* Rename its SCNL if appropriate */
 		if ( intype == TypeTraceBuf2 )
 			remap_tracebuf2_scnl( match, thd2 );
 		else if ( intype == TypeTraceBuf )
 			remap_tracebuf_scnl( match, thd );
-	}
-
-/* Copy message to output buffer */
-	if ( outmsg && *outmsg ) {
-		memcpy(*outmsg, inmsg, inlen);
-		*outlen  = inlen;
-		*outtype = intype;
 	}
 /*
 	logit(
@@ -600,10 +601,10 @@ static double get_wavetime( TRACE2_HEADER* wvmsg )
 	packettime = wvmsg->starttime;
 #if defined( _SPARC )
 	if ( byte_order == 'i' )
-		SwapDouble( &packettime );
+		swap_double( &packettime );
 #elif defined( _INTEL )
 	if ( byte_order == 's' )
-		SwapDouble( &packettime );
+		swap_double( &packettime );
 #else
    logit("", "get_wavetime WARNING! _INTEL and _SPARC are both undefined.");
    return -1.;
@@ -629,6 +630,37 @@ static SCNL_Filter *realloc_scnlf_list( const char *prog )
 	}
 
 	return Lists;
+}
+
+/*
+ *
+ */
+static void swap_double( double *data )
+{
+   char temp;
+   union {
+       char c[8];
+   } dat;
+
+   memcpy(&dat, data, sizeof(double));
+   temp     = dat.c[0];
+   dat.c[0] = dat.c[7];
+   dat.c[7] = temp;
+
+   temp     = dat.c[1];
+   dat.c[1] = dat.c[6];
+   dat.c[6] = temp;
+
+   temp     = dat.c[2];
+   dat.c[2] = dat.c[5];
+   dat.c[5] = temp;
+
+   temp     = dat.c[3];
+   dat.c[3] = dat.c[4];
+   dat.c[4] = temp;
+   memcpy(data, &dat, sizeof(double));
+
+   return;
 }
 
 /*

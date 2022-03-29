@@ -33,8 +33,6 @@ static void dif2trace_end( void );                /* Free all the local memory &
 static void init_traceinfo( const TRACE2X_HEADER *, const uint8_t, _TRACEINFO * );
 static void operation_int( _TRACEINFO *, float *, float *const );
 static void operation_diff( _TRACEINFO *, float *, float *const );
-static void mod_channel_code( TracePacket *, const char *const );
-static void skip_mod_channel_code( TracePacket *, const char *const );
 
 /* Ring messages things */
 static SHM_INFO InRegion;      /* shared memory region to use for i/o    */
@@ -100,7 +98,6 @@ int main ( int argc, char **argv )
 
 	int8_t operationdirc = 0;
 	void (*operationfunc)( _TRACEINFO *, float *, float *const ) = NULL;
-	void (*modifychanfunc)( TracePacket *, const char *const ) = NULL;
 
 /* Check command line arguments */
 	if ( argc != 2 ) {
@@ -713,29 +710,5 @@ static void operation_diff( _TRACEINFO *traceptr, float *tracedata_f, float *con
 		*tracedata_f = (float)difresult;
 	}
 
-	return;
-}
-
-/*
- *
- */
-static void mod_channel_code( TracePacket *tracebuffer, const char *const pchan )
-{
-	char tmpchan[4];
-
-/* Modify the channel code by the pre-setting channel code */
-	strcpy(tmpchan, pchan);
-	tmpchan[2] = tracebuffer->trh2x.chan[2];
-	tmpchan[3] = '\0';
-	strcpy(tracebuffer->trh2x.chan, tmpchan);
-
-	return;
-}
-
-/*
- * Dummy function!
- */
-static void skip_mod_channel_code( TracePacket *tracebuffer, const char *const pchan )
-{
 	return;
 }
