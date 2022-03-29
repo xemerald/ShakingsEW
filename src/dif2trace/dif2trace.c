@@ -19,6 +19,7 @@
 #include <lockfile.h>
 #include <trace_buf.h>
 /* Local header include */
+#include <scnlfilter.h>
 #include <dif2trace.h>
 #include <dif2trace_list.h>
 #include <dif2trace_filter.h>
@@ -58,7 +59,7 @@ static uint16_t DriftCorrectThreshold;      /* seconds waiting for D.C. */
 static uint16_t nLogo = 0;
 static uint8_t  HighPassOrder  = 2;         /* Order for high pass filter */
 static double   HighPassCorner = 0.075;     /* Corner frequency for high pass filter */
-static char     PostChannelCode[4] = { 0 }; /* Channel code for trace after processing */
+static uint8_t  SCNLFilterSwitch = 0;       /* 0 if no filter command in the file    */
 
 /* Things to look up in the earthworm.h tables with getutil.c functions */
 static int64_t InRingKey;       /* key of transport ring for i/o     */
@@ -121,6 +122,9 @@ int main ( int argc, char **argv )
 		fprintf(stderr, "one instance of %s is already running, exiting\n", argv[0]);
 		exit (-1);
 	}
+/* Initialize the SCNL filter required arguments */
+	if ( SCNLFilterSwitch )
+		scnlfilter_init( "dif2trace" );
 /* Get process ID for heartbeat messages */
 	MyPid = getpid();
 	if ( MyPid == -1 ) {
@@ -161,12 +165,6 @@ int main ( int argc, char **argv )
 		logit("e", "dif2trace: Unknown operation type, exiting!\n");
 		exit(-1);
 	}
-/* Initialize the function pointer for modification of channel code */
-	if ( strlen(PostChannelCode) )
-		modifychanfunc = mod_channel_code;
-	else
-		modifychanfunc = skip_mod_channel_code;
-
 /* Force a heartbeat to be issued in first pass thru main loop */
 	timeLastBeat = time(&timeNow) - HeartBeatInterval - 1;
 /*----------------------- setup done; start main loop -------------------------*/
@@ -240,7 +238,18 @@ int main ( int argc, char **argv )
 					);
 					continue;
 				}
+			/* */
+				if (
+					SCNLFilterSwitch &&
+					!scnlfilter_apply( tracebuffer.msg, recsize, reclogo.type, NULL, NULL, NULL )
+				) {
+				/* Debug */
 
+					printf("dif2trace: Found %s.%s.%s.%s but not in the filter, drop it!\n",
+					tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc);
+
+					continue;
+				}
 			/* */
 				if ( (traceptr = dif2tra_list_search( &tracebuffer.trh2x )) == NULL ) {
 				/* Error when insert into the tree */
@@ -302,8 +311,6 @@ int main ( int argc, char **argv )
 					operationfunc( traceptr, tracedata_f, tracedata_end );
 				/* Modify the trace header to indicate that the data already been processed */
 					tracebuffer.trh2x.pinno += operationdirc;
-				/* Modify the channel code by the pre-setting channel code */
-					modifychanfunc( &tracebuffer, PostChannelCode );
 				/*
 				 * Dump the new trace into output message,
 				 * and send the packed message to the output ring
@@ -460,16 +467,6 @@ static void dif2trace_config( char *configfile )
 				HighPassCorner = k_val();
 				logit("o", "dif2trace: Corner frequency of high pass filter change to %lf\n", HighPassCorner);
 			}
-			else if( k_its("PostChannelCode") ) {
-				str = k_str();
-				if ( strlen(str) == 2 ) {
-					strcpy(PostChannelCode, str);
-					logit("o", "dif2trace: Post channel code change to <%s>\n", PostChannelCode);
-				}
-				else {
-					logit("e", "dif2trace: Invalid post channel code <%s>, keep the original.", str);
-				}
-			}
 		/* Enter installation & module to get event messages from */
 		/* 7 */
 			else if ( k_its("GetEventsFrom") ) {
@@ -501,6 +498,10 @@ static void dif2trace_config( char *configfile )
 				}
 				nLogo++;
 				init[7] = 1;
+			}
+			else if ( scnlfilter_com( "dif2trace" ) ) {
+			/* */
+				SCNLFilterSwitch = 1;
 			}
 		/* Unknown command */
 			else {
@@ -630,6 +631,7 @@ static void dif2trace_end( void )
 {
 	tport_detach( &InRegion );
 	tport_detach( &OutRegion );
+	scnlfilter_end();
 	dif2tra_filter_end();
 	dif2tra_list_end();
 
