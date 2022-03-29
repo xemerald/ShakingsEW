@@ -153,12 +153,6 @@ int main ( int argc, char **argv )
 		logit("e", "respectra: Initialize the pmatrix error, exiting!\n");
 		exit(-1);
 	}
-/* Initialize the function pointer for modification of channel code */
-	if ( strlen(PostChannelCode) )
-		modifychanfunc = mod_channel_code;
-	else
-		modifychanfunc = skip_mod_channel_code;
-
 /* Force a heartbeat to be issued in first pass thru main loop */
 	timeLastBeat = time(&timeNow) - HeartBeatInterval - 1;
 /*----------------------- setup done; start main loop -------------------------*/
@@ -303,8 +297,6 @@ int main ( int argc, char **argv )
 					operation_rsp( traceptr, tracedata_f, tracedata_end, OutputTypeFlag );
 				/* Modify the trace header to indicate that the data already been processed */
 					tracebuffer.trh2x.pinno = OutputTypeFlag;
-				/* Modify the channel code by the pre-setting channel code */
-					modifychanfunc( &tracebuffer, PostChannelCode );
 				/*
 				 * Dump the new trace into output message,
 				 * and send the packed message to the output ring
@@ -461,16 +453,6 @@ static void respectra_config( char *configfile )
 			else if ( k_its("NaturalPeriod") ) {
 				NaturalPeriod = k_val();
 				logit("o", "respectra: The natural period change to %lf\n", NaturalPeriod);
-			}
-			else if ( k_its("PostChannelCode") ) {
-				str = k_str();
-				if ( strlen(str) == 2 ) {
-					strcpy(PostChannelCode, str);
-					logit("o", "respectra: Post channel code change to <%s>\n", PostChannelCode);
-				}
-				else {
-					logit("e", "respectra: Invalid post channel code <%s>, keep the original.", str);
-				}
 			}
 		/* Enter installation & module to get event messages from */
 		/* 7 */
@@ -711,30 +693,8 @@ static void operation_rsp( _TRACEINFO *traceptr, float *tracedata_f, float *cons
 }
 
 /*
-*/
-static void mod_channel_code( TracePacket *tracebuffer, const char * const pchan )
-{
-	char  tmpchan[4];
-
-/* Modify the channel code by the pre-setting channel code */
-	strcpy(tmpchan, pchan);
-	tmpchan[2] = tracebuffer->trh2x.chan[2];
-	tmpchan[3] = '\0';
-	strcpy(tracebuffer->trh2x.chan, tmpchan);
-
-	return;
-}
-
-/*
-* Dummy function!
-*/
-static void skip_mod_channel_code( TracePacket *tracebuffer, const char * const pchan )
-{
-	return;
-}
-
-/*
-*/
+ *
+ */
 static inline double get_mavg( const double sample, const double average )
 {
 	return average + 0.001 * (sample - average);
