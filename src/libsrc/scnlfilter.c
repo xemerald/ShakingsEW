@@ -95,6 +95,10 @@ int scnlfilter_com( const char *prog )
 {
 	char   *str;
 	uint8_t fbit;
+
+/* */
+	if ( nSCNL >= Max_SCNL )
+		realloc_scnlf_list( prog );
 /* Add a block entry to the send-list without remapping */
 	if ( k_its("Block_SCNL") ) {
 	/* This SCNL should be blocked */
@@ -116,13 +120,10 @@ int scnlfilter_com( const char *prog )
 	else {
 		return 0;
 	}
-
 /* */
 	Lists[nSCNL].owilds = 0;
 	Lists[nSCNL].rwilds = 0;
-/* */
-	if ( nSCNL >= Max_SCNL )
-		realloc_scnlf_list( prog );
+
 /* Read original SCNL */
 	for ( fbit = STA_FILTER_BIT; fbit > 0; fbit >>= 1 ) {
 		if ( (str = k_str()) ) {
@@ -625,7 +626,7 @@ static SCNL_Filter *realloc_scnlf_list( const char *prog )
 	_size     = Max_SCNL * sizeof(SCNL_Filter);
 /* */
 	if ( (Lists = (SCNL_Filter *)realloc(Lists, _size)) == NULL ) {
-		logit("e", "%s: Error allocating %d bytes for SCNL list; exiting!\n", prog, _size);
+		logit("e", "%s: Error allocating %ld bytes for SCNL list; exiting!\n", prog, _size);
 		exit(-1);
 	}
 
