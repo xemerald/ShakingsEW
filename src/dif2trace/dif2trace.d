@@ -27,7 +27,7 @@ HighPassCorner      0.075
 #
 DriftCorrectThreshold   30        # seconds waiting for D.C.
 
-# List of station/channel/network/loc codes to process:
+# List of station/channel/network/loc codes to process (Optional):
 #
 # Use any combination of Allow_SCNL (to process data as-is) and
 # Allow_SCNL_Remap (to change the SCNL on the fly) commands.
@@ -38,7 +38,7 @@ DriftCorrectThreshold   30        # seconds waiting for D.C.
 #
 # Use the Block_SCNL command (works with both wildcards
 # and not, but only makes sense to use with wildcards) to block
-# any specific channels that you don't want sent.
+# any specific channels that you don't want to process.
 #
 # Note, the Block commands must precede any wildcard commands for
 # the blocking to occur.

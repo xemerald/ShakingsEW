@@ -20,6 +20,7 @@
 #include <trace_buf.h>
 /* Local header include */
 #include <recordtype.h>
+#include <scnlfilter.h>
 #include <respectra.h>
 #include <respectra_list.h>
 #include <respectra_pmat.h>
@@ -32,8 +33,6 @@ static void respectra_end( void );  /* Free all the local memory & close socket 
 
 static void init_traceinfo( const TRACE2X_HEADER *, _TRACEINFO * );
 static void operation_rsp( _TRACEINFO *, float *, float *const, const int );
-static void mod_channel_code( TracePacket *, const char *const );
-static void skip_mod_channel_code( TracePacket *, const char *const );
 static inline double get_mavg( const double, const double );
 
 /* Ring messages things */
@@ -60,7 +59,7 @@ static uint16_t DriftCorrectThreshold;      /* seconds waiting for D.C. */
 static uint16_t nLogo = 0;
 static double   DampingRatio  = 0.05;       /* The damping ratio for calculating, default is 5% */
 static double   NaturalPeriod = 1.0;        /* The period for calculating, default is 1 second & 0.3 second */
-static char     PostChannelCode[4] = { 0 }; /* Channel code for trace after processing */
+static uint8_t  SCNLFilterSwitch = 0;       /* 0 if no filter command in the file    */
 
 /* Things to look up in the earthworm.h tables with getutil.c functions */
 static int64_t InRingKey;       /* key of transport ring for i/o     */
@@ -125,6 +124,9 @@ int main ( int argc, char **argv )
 		fprintf(stderr, "one instance of %s is already running, exiting\n", argv[0]);
 		exit (-1);
 	}
+/* Initialize the SCNL filter required arguments */
+	if ( SCNLFilterSwitch )
+		scnlfilter_init( "respectra" );
 /* Get process ID for heartbeat messages */
 	MyPid = getpid();
 	if ( MyPid == -1 ) {
@@ -216,7 +218,7 @@ int main ( int argc, char **argv )
 			if ( reclogo.type == TypeTracebuf2 ) {
 				if ( !TRACE2_HEADER_VERSION_IS_21(&(tracebuffer.trh2)) ) {
 					printf(
-						"respectra: %s.%s.%s.%s version is invalid, please check it!\n",
+						"respectra: SCNL %s.%s.%s.%s version is invalid, please check it!\n",
 						tracebuffer.trh2.sta, tracebuffer.trh2.chan, tracebuffer.trh2.net, tracebuffer.trh2.loc
 					);
 					continue;
@@ -224,17 +226,26 @@ int main ( int argc, char **argv )
 			/* */
 				if ( tracebuffer.trh2x.datatype[0] != 'f' && tracebuffer.trh2x.datatype[0] != 't' ) {
 					printf(
-						"respectra: %s.%s.%s.%s datatype[%s] is invalid, skip it!\n",
+						"respectra: SCNL %s.%s.%s.%s datatype[%s] is invalid, skip it!\n",
 						tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc,
 						tracebuffer.trh2x.datatype
 					);
+					continue;
+				}
+				if (
+					SCNLFilterSwitch &&
+					!scnlfilter_apply( tracebuffer.msg, recsize, reclogo.type, NULL, NULL, NULL )
+				) {
+				/* Debug */
+					printf("respectra: Found SCNL %s.%s.%s.%s but not in the filter, drop it!\n",
+					tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc);
 					continue;
 				}
 			/* */
 				if ( (traceptr = rsp_list_search( &tracebuffer.trh2x )) == NULL ) {
 				/* Error when insert into the tree */
 					logit(
-						"e", "respectra: %s.%s.%s.%s insert into trace tree error, drop this trace.\n",
+						"e", "respectra: SCNL %s.%s.%s.%s insert into trace tree error, drop this trace.\n",
 						tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc
 					);
 					continue;
@@ -243,7 +254,7 @@ int main ( int argc, char **argv )
 			/* First time initialization */
 				if ( traceptr->firsttime || fabs(1.0 / tracebuffer.trh2x.samprate - traceptr->delta) > FLT_EPSILON ) {
 					printf(
-						"respectra: New SCNL(%s.%s.%s.%s) received, starting to trace!\n",
+						"respectra: New SCNL %s.%s.%s.%s received, starting to trace!\n",
 						traceptr->sta, traceptr->chan, traceptr->net, traceptr->loc
 					);
 					init_traceinfo( &tracebuffer.trh2x, traceptr );
@@ -265,7 +276,7 @@ int main ( int argc, char **argv )
 					else if ( tmp_time > 0.0 && traceptr->lasttime > 0.0 ) {
 						if ( tmp_time >= DriftCorrectThreshold ) {
 							printf(
-								"respectra: Found %ld sample gap in %s.%s.%s.%s, restart tracing!\n",
+								"respectra: Found %ld sample gap in SCNL %s.%s.%s.%s, restart tracing!\n",
 								(long)(tmp_time * tracebuffer.trh2x.samprate),
 								tracebuffer.trh2x.sta, tracebuffer.trh2x.chan,
 								tracebuffer.trh2x.net, tracebuffer.trh2x.loc
@@ -309,7 +320,7 @@ int main ( int argc, char **argv )
 				/* */
 					if ( traceptr->readycount >= DriftCorrectThreshold ) {
 						printf(
-							"respectra: %s.%s.%s.%s initialization of D.C. complete!\n",
+							"respectra: SCNL %s.%s.%s.%s initialization of D.C. complete!\n",
 							tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc
 						);
 					}
@@ -493,6 +504,10 @@ static void respectra_config( char *configfile )
 				nLogo++;
 				init[7] = 1;
 			}
+			else if ( scnlfilter_com( "respectra" ) ) {
+			/* */
+				SCNLFilterSwitch = 1;
+			}
 		/* Unknown command */
 			else {
 				logit("e", "respectra: <%s> Unknown command in <%s>.\n", com, configfile);
@@ -621,6 +636,7 @@ static void respectra_end( void )
 {
 	tport_detach( &InRegion );
 	tport_detach( &OutRegion );
+	scnlfilter_end();
 	rsp_pmat_end();
 	rsp_list_end();
 

@@ -25,10 +25,28 @@ NaturalPeriod      0.3
 #
 DriftCorrectThreshold   30        # seconds waiting for D.C.
 
-# First two character of channel code for the trace after processing, if you don't want
-# to change the code just comment it:
+# List of station/channel/network/loc codes to process (Optional):
 #
-PostChannelCode     "RA"
+# Use any combination of Allow_SCNL (to process data as-is) and
+# Allow_SCNL_Remap (to change the SCNL on the fly) commands.
+#
+# Use * as a wildcard for any field. A wildcard in the
+# "Map to" fields of Allow_SCNL_Remap means that field will
+# not be renamed.
+#
+# Use the Block_SCNL command (works with both wildcards
+# and not, but only makes sense to use with wildcards) to block
+# any specific channels that you don't want to process.
+#
+# Note, the Block commands must precede any wildcard commands for
+# the blocking to occur.
+#
+#                 Origin SCNL      Map to SCNL
+#Block_SCNL       BOZ LHZ US *                    # Block this specific channel
+#Allow_SCNL       JMP ASZ NC 01                   # Allow this specific channel
+#Allow_SCNL       JPS *   NC *                    # Allow all components of JPS NC
+#Allow_SCNL_Remap JGR VHZ NC --    *   EHZ * *    # Change component code only
+#Allow_SCNL_Remap CAL *   NC *     ALM *   * *    # Allow all component of CAL, but change the site code to ALM
 
 # List the message logos to grab from transport ring
 #              Installation       Module          Message Types

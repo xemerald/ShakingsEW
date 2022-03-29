@@ -237,7 +237,7 @@ int main ( int argc, char **argv )
 				/* Swap the byte order to local order */
 					if ( WaveMsg2MakeLocal( &tracebuffer_i.trh2 ) ) {
 						logit(
-							"e", "cf2trace: %s.%s.%s.%s byte order swap error, please check it!\n",
+							"e", "cf2trace: SCNL %s.%s.%s.%s byte order swap error, please check it!\n",
 							tracebuffer_i.trh2.sta, tracebuffer_i.trh2.chan, tracebuffer_i.trh2.net,
 							tracebuffer_i.trh2.loc
 						);
@@ -249,7 +249,7 @@ int main ( int argc, char **argv )
 				/* Swap the byte order to local order */
 					if ( WaveMsg2XMakeLocal( &tracebuffer_i.trh2x ) ) {
 						logit(
-							"e", "cf2trace: %s.%s.%s.%s byte order swap error, please check it!\n",
+							"e", "cf2trace: SCNL %s.%s.%s.%s byte order swap error, please check it!\n",
 							tracebuffer_i.trh2x.sta, tracebuffer_i.trh2x.chan, tracebuffer_i.trh2x.net,
 							tracebuffer_i.trh2x.loc
 						);
@@ -258,7 +258,7 @@ int main ( int argc, char **argv )
 				}
 				else {
 					logit(
-						"e", "cf2trace: %s.%s.%s.%s version is invalid, please check it!\n",
+						"e", "cf2trace: SCNL %s.%s.%s.%s version is invalid, please check it!\n",
 						tracebuffer_i.trh2.sta, tracebuffer_i.trh2.chan, tracebuffer_i.trh2.net, tracebuffer_i.trh2.loc
 					);
 					continue;

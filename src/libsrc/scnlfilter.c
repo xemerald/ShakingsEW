@@ -30,7 +30,7 @@
 #include <kom.h>
 #include <swap.h>
 
-#define INCREMENT_SCNL  10                   /* increment the limit of # scnl's    */
+#define INCREMENT_SCNL  8                    /* increment the limit of # scnl's    */
 #define STA_STRLEN    (TRACE2_STA_LEN - 1)   /* max string-length of station code  */
 #define CHAN_STRLEN   (TRACE2_CHAN_LEN - 1)  /* max string-length of component code*/
 #define NET_STRLEN    (TRACE2_NET_LEN - 1)   /* max string-length of network code  */

@@ -221,7 +221,7 @@ int main ( int argc, char **argv )
 			if ( reclogo.type == TypeTracebuf2 ) {
 				if ( !TRACE2_HEADER_VERSION_IS_21(&(tracebuffer.trh2)) ) {
 					printf(
-						"dif2trace: %s.%s.%s.%s version is invalid, please check it!\n",
+						"dif2trace: SCNL %s.%s.%s.%s version is invalid, please check it!\n",
 						tracebuffer.trh2.sta, tracebuffer.trh2.chan, tracebuffer.trh2.net, tracebuffer.trh2.loc
 					);
 					continue;
@@ -229,7 +229,7 @@ int main ( int argc, char **argv )
 			/* */
 				if ( tracebuffer.trh2x.datatype[0] != 'f' && tracebuffer.trh2x.datatype[0] != 't' ) {
 					printf(
-						"dif2trace: %s.%s.%s.%s datatype[%s] is invalid, skip it!\n",
+						"dif2trace: SCNL %s.%s.%s.%s datatype[%s] is invalid, skip it!\n",
 						tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc,
 						tracebuffer.trh2x.datatype
 					);
@@ -241,17 +241,15 @@ int main ( int argc, char **argv )
 					!scnlfilter_apply( tracebuffer.msg, recsize, reclogo.type, NULL, NULL, NULL )
 				) {
 				/* Debug */
-
-					printf("dif2trace: Found %s.%s.%s.%s but not in the filter, drop it!\n",
+					printf("dif2trace: Found SCNL %s.%s.%s.%s but not in the filter, drop it!\n",
 					tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc);
-
 					continue;
 				}
 			/* */
 				if ( (traceptr = dif2tra_list_search( &tracebuffer.trh2x )) == NULL ) {
 				/* Error when insert into the tree */
 					logit(
-						"e", "dif2trace: %s.%s.%s.%s insert into trace tree error, drop this trace.\n",
+						"e", "dif2trace: SCNL %s.%s.%s.%s insert into trace tree error, drop this trace.\n",
 						tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc
 					);
 					continue;
@@ -259,7 +257,7 @@ int main ( int argc, char **argv )
 			/* First time initialization */
 				if ( traceptr->firsttime || fabs(1.0 / tracebuffer.trh2x.samprate - traceptr->delta) > FLT_EPSILON ) {
 					printf(
-						"dif2trace: New SCNL(%s.%s.%s.%s) received, starting to trace!\n",
+						"dif2trace: New SCNL %s.%s.%s.%s received, starting to trace!\n",
 						traceptr->sta, traceptr->chan, traceptr->net, traceptr->loc
 					);
 					init_traceinfo( &tracebuffer.trh2x, OperationFlag, traceptr );
@@ -281,7 +279,7 @@ int main ( int argc, char **argv )
 					else if ( tmp_time > 0.0 && traceptr->lasttime > 0.0 )	{
 						if ( tmp_time >= DriftCorrectThreshold ) {
 							printf(
-								"dif2trace: Found %ld sample gap in %s.%s.%s.%s, restart tracing!\n",
+								"dif2trace: Found %ld sample gap in SCNL %s.%s.%s.%s, restart tracing!\n",
 								(long)(tmp_time * tracebuffer.trh2x.samprate),
 								tracebuffer.trh2x.sta, tracebuffer.trh2x.chan,
 								tracebuffer.trh2x.net, tracebuffer.trh2x.loc
@@ -323,7 +321,7 @@ int main ( int argc, char **argv )
 
 					if ( traceptr->readycount >= DriftCorrectThreshold ) {
 						printf(
-							"dif2trace: %s.%s.%s.%s initialization of D.C. complete!\n",
+							"dif2trace: SCNL %s.%s.%s.%s initialization of D.C. complete!\n",
 							tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc
 						);
 					}
