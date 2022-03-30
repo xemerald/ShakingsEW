@@ -39,9 +39,9 @@ static SHM_INFO InRegion;      /* shared memory region to use for i/o    */
 static SHM_INFO OutRegion;     /* shared memory region to use for i/o    */
 /* */
 #define MAXLOGO 5
-MSG_LOGO Putlogo;                /* array for output module, type, instid     */
-MSG_LOGO Getlogo[MAXLOGO];                /* array for requesting module, type, instid */
-pid_t    MyPid;                  /* for restarts by startstop                 */
+static MSG_LOGO Putlogo;                /* array for output module, type, instid     */
+static MSG_LOGO Getlogo[MAXLOGO];                /* array for requesting module, type, instid */
+static pid_t    MyPid;                  /* for restarts by startstop                 */
 
 #define OPERATION_DIFF  0
 #define OPERATION_INT   1
@@ -235,18 +235,21 @@ int main ( int argc, char **argv )
 					);
 					continue;
 				}
-			/* */
+			/* Initialize for in-list checking */
+				traceptr = NULL;
+			/* If this trace is already inside the local list, it would skip the SCNL filter */
 				if (
 					SCNLFilterSwitch &&
-					!scnlfilter_apply( tracebuffer.msg, recsize, reclogo.type, NULL, NULL, NULL )
+					!(traceptr = dif2tra_list_find( &tracebuffer.trh2x )) &&
+					!scnlfilter_apply( tracebuffer.msg, recsize, reclogo.type, NULL, NULL )
 				) {
 				/* Debug */
 					//printf("dif2trace: Found SCNL %s.%s.%s.%s but not in the filter, drop it!\n",
 					//tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc);
 					continue;
 				}
-			/* */
-				if ( (traceptr = dif2tra_list_search( &tracebuffer.trh2x )) == NULL ) {
+			/* If we can't get the trace pointer to the local list, search it again */
+				if ( !traceptr && !(traceptr = dif2tra_list_search( &tracebuffer.trh2x )) ) {
 				/* Error when insert into the tree */
 					logit(
 						"e", "dif2trace: SCNL %s.%s.%s.%s insert into trace tree error, drop this trace.\n",

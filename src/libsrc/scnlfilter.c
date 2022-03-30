@@ -41,6 +41,9 @@
 #define NET_FILTER_BIT   0x02
 #define LOC_FILTER_BIT   0x01
 /* */
+#define WILDCARD_STR     "*"      /* wildcard string for SCNL */
+
+/* */
 typedef struct {
 	char sta[TRACE2_STA_LEN];     /* original station name  */
 	char chan[TRACE2_CHAN_LEN];   /* original channel name  */
@@ -56,6 +59,8 @@ typedef struct {
 	uint8_t block;                /* flag: 1=block SCNL, 0=don't */
 	uint8_t owilds;               /* for original wildcard bits  */
 	uint8_t rwilds;               /* for remapped wildcard bits  */
+
+	void *extra;
 } SCNL_Filter;
 
 /* Local function prototypes & macros */
@@ -74,12 +79,11 @@ static int    FilterInit = 0;     /* initialization flag                    */
 static int    Max_SCNL   = 0;     /* working limit on # scnl's to ship      */
 static int    nSCNL      = 0;     /* # of scnl's we're configured to ship   */
 static int    nWild      = 0;     /* # of Wildcards used in config file     */
-static char  *Wild       = "*";   /* wildcard string for SCNL               */
 /* */
 static unsigned char TypeTraceBuf;
 static unsigned char TypeTraceBuf2;   /* with Loc */
 /* */
-#define IS_WILD(SCNL)                 (!strcmp((SCNL), Wild))
+#define IS_WILD(SCNL)                 (!strcmp((SCNL), WILDCARD_STR))
 #define IS_MATCH(SCNL_A, SCNL_B)      (!strcmp((SCNL_A), (SCNL_B)))
 #define IS_NOT_MATCH(SCNL_A, SCNL_B)  (strcmp((SCNL_A), (SCNL_B)))
 
@@ -123,6 +127,7 @@ int scnlfilter_com( const char *prog )
 /* */
 	Lists[nSCNL].owilds = 0;
 	Lists[nSCNL].rwilds = 0;
+	Lists[nSCNL].extra  = NULL;
 
 /* Read original SCNL */
 	for ( fbit = STA_FILTER_BIT; fbit > 0; fbit >>= 1 ) {
@@ -144,19 +149,19 @@ int scnlfilter_com( const char *prog )
 			/* original component code */
 				if ( strlen(str) > (size_t)CHAN_STRLEN )
 					goto except_com;
-				strcpy(Lists[nSCNL].chan,str);
+				strcpy(Lists[nSCNL].chan, str);
 				break;
 			case NET_FILTER_BIT:
 			/* original network code */
 				if ( strlen(str) > (size_t)NET_STRLEN )
 					goto except_com;
-				strcpy(Lists[nSCNL].net,str);
+				strcpy(Lists[nSCNL].net, str);
 				break;
 			case LOC_FILTER_BIT:
 			/* original location code */
 				if ( strlen(str) > (size_t)LOC_STRLEN )
 					goto except_com;
-				strcpy(Lists[nSCNL].loc,str);
+				strcpy(Lists[nSCNL].loc, str);
 			default:
 				break;
 			}
@@ -185,19 +190,19 @@ int scnlfilter_com( const char *prog )
 				/* remap component code */
 					if ( strlen(str) > (size_t)CHAN_STRLEN )
 						goto except_com;
-					strcpy(Lists[nSCNL].rchan,str);
+					strcpy(Lists[nSCNL].rchan, str);
 					break;
 				case NET_FILTER_BIT:
 				/* remap network code */
 					if ( strlen(str) > (size_t)NET_STRLEN )
 						goto except_com;
-					strcpy(Lists[nSCNL].rnet,str);
+					strcpy(Lists[nSCNL].rnet, str);
 					break;
 				case LOC_FILTER_BIT:
 				/* remap location code */
 					if ( strlen(str) > (size_t)LOC_STRLEN )
 						goto except_com;
-					strcpy(Lists[nSCNL].rloc,str);
+					strcpy(Lists[nSCNL].rloc, str);
 				default:
 					break;
 				}
@@ -221,6 +226,23 @@ except_com:
 	exit(-1);
 }
 
+/*
+ *
+ */
+int scnlfilter_extra_com( void *(*extra_proc)( const char * ) )
+{
+	const int prev = nSCNL - 1;
+	char     *str;
+
+/* */
+	if ( (str = k_str()) )
+		Lists[prev].extra = extra_proc( str );
+/* */
+	if ( !str || !Lists[prev].extra )
+		return 0;
+
+	return 1;
+}
 
 /*
  * scnlfilter_init() - Make sure all the required commands were found in the config file,
@@ -285,6 +307,7 @@ int scnlfilter_init( const char *prog )
 		}
 	}
 	logit("o","\n");
+/* */
 	FilterInit = 1;
 
 	return 0;
@@ -298,7 +321,7 @@ int scnlfilter_init( const char *prog )
  *   20020319 dbh Changed the return code handling
  */
 int scnlfilter_apply(
-	void *inmsg, size_t inlen, unsigned char intype, void *outmsg, size_t *outlen, unsigned char *outtype
+	void *inmsg, size_t inlen, unsigned char intype, void *outmsg, void **extra
 ) {
 	int            i;
 	TRACE_HEADER  *thd;
@@ -332,18 +355,9 @@ int scnlfilter_apply(
 	}
 
 /* Look for the message's SCNL in the Lists-list. */
-   match = (SCNL_Filter *) NULL;
-/*
- * Use the more efficient binary search if there
- * were no wildcards in the original SCNL request list.
- */
-	if ( nWild == 0 ) {
-		match = (SCNL_Filter *)bsearch( &key, Lists, nSCNL, sizeof(SCNL_Filter), compare_scnl );
-		if ( match != NULL && match->block )
-			match = (SCNL_Filter *)NULL; /* SCNL is marked to be blocked */
-	}
-/* Gotta do it the linear way if wildcards were used! */
-	else {
+	match = NULL;
+	if ( nWild ) {
+	/* Gotta do it the linear way if wildcards were used! */
 		for ( i = 0, current = Lists; i < nSCNL; i++, current++ ) {
 			if ( filter_wildcards( current, &key ) ) {
 			/* found a match! */
@@ -353,8 +367,17 @@ int scnlfilter_apply(
 			}
 		}
 	}
+	else {
+	/*
+	 * Use the more efficient binary search if there
+	 * were no wildcards in the original SCNL request list.
+	 */
+		match = (SCNL_Filter *)bsearch( &key, Lists, nSCNL, sizeof(SCNL_Filter), compare_scnl );
+		if ( match && match->block )
+			match = (SCNL_Filter *)NULL; /* SCNL is marked to be blocked */
+	}
 
-	if ( match == NULL ) {
+	if ( !match ) {
 		/* logit(
 			"e","scnlfilter: rejecting msgtype:%d from %s %s %s %s\n",
 			intype, key.sta, key.chan, key.net, key.loc
@@ -369,8 +392,6 @@ int scnlfilter_apply(
 	if ( outmsg ) {
 	/* Copy message to output buffer */
 		memcpy(outmsg, inmsg, inlen);
-		*outlen  = inlen;
-		*outtype = intype;
 		thd  = (TRACE_HEADER *)outmsg;
 		thd2 = (TRACE2_HEADER *)outmsg;
 	}
@@ -381,6 +402,10 @@ int scnlfilter_apply(
 		else if ( intype == TypeTraceBuf )
 			remap_tracebuf_scnl( match, thd );
 	}
+
+/* Extra argument part */
+	if ( extra )
+		*extra = match->extra;
 /*
 	logit(
 		"e","scnlfilter: accepting msgtype:%d from %s %s %s %s\n",
@@ -428,7 +453,6 @@ void scnlfilter_logmsg( char *msg, int msglen, unsigned char msgtype, char *note
 	return;
 }
 
-
 /*
  * scnlfilter_end() - frees allocated memory and
  *                    does any other cleanup stuff
@@ -449,10 +473,7 @@ static int filter_wildcards( const SCNL_Filter *filter, const SCNL_Filter *key )
 
 /* */
 	for ( fbit = STA_FILTER_BIT; fbit > 0; fbit >>= 1 ) {
-		if ( filter->owilds & fbit ) {
-			continue;
-		}
-		else {
+		if ( !(filter->owilds & fbit) ) {
 			switch ( fbit ) {
 			case STA_FILTER_BIT:
 				if ( IS_NOT_MATCH( filter->sta, key->sta ) )
@@ -488,10 +509,7 @@ static int remap_tracebuf_scnl( const SCNL_Filter *filter, TRACE_HEADER *trh )
 
 /* */
 	for ( fbit = STA_FILTER_BIT; fbit > 0; fbit >>= 1 ) {
-		if ( filter->rwilds & fbit ) {
-			continue;
-		}
-		else {
+		if ( !(filter->rwilds & fbit) ) {
 			switch ( fbit ) {
 			case STA_FILTER_BIT:
 				memcpy(trh->sta, filter->rsta, TRACE2_STA_LEN);
@@ -521,10 +539,7 @@ static int remap_tracebuf2_scnl( const SCNL_Filter *filter, TRACE2_HEADER *trh2 
 
 /* */
 	for ( fbit = STA_FILTER_BIT; fbit > 0; fbit >>= 1 ) {
-		if ( filter->rwilds & fbit ) {
-			continue;
-		}
-		else {
+		if ( !(filter->rwilds & fbit) ) {
 			switch ( fbit ) {
 			case STA_FILTER_BIT:
 				memcpy(trh2->sta, filter->rsta, TRACE2_STA_LEN);
