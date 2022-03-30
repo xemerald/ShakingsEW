@@ -100,6 +100,7 @@ int main ( int argc, char **argv )
 	TracePacket tracebuffer;  /* message which is sent to share ring    */
 	float      *tracedata_f;
 	float      *tracedata_end;
+	const void *_match = NULL;
 
 	double tmp_time;
 
@@ -227,11 +228,12 @@ int main ( int argc, char **argv )
 				}
 			/* Initialize for in-list checking */
 				traceptr = NULL;
+				_match   = NULL;
 			/* If this trace is already inside the local list, it would skip the SCNL filter */
 				if (
 					SCNLFilterSwitch &&
 					!(traceptr = rsp_list_search( &tracebuffer.trh2x )) &&
-					!scnlfilter_apply( tracebuffer.msg, recsize, reclogo.type, NULL, NULL )
+					!scnlfilter_apply( tracebuffer.msg, recsize, reclogo.type, &_match, NULL )
 				) {
 				/* Debug */
 					//printf("respectra: Found SCNL %s.%s.%s.%s but not in the filter, drop it!\n",
@@ -246,6 +248,20 @@ int main ( int argc, char **argv )
 						tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc
 					);
 					continue;
+				}
+			/* Remap the SCNL of this incoming trace */
+				if ( traceptr->match ) {
+					scnlfilter_trace_remap( tracebuffer.msg, reclogo.type, traceptr->match );
+				}
+				else {
+					if ( scnlfilter_trace_remap( tracebuffer.msg, reclogo.type, _match ) ) {
+						printf(
+							"respectra: Received trace SCNL %s.%s.%s.%s remap to SCNL %s.%s.%s.%s!\n",
+							traceptr->sta, traceptr->chan, traceptr->net, traceptr->loc,
+							tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc
+						);
+					}
+					traceptr->match = _match;
 				}
 
 			/* First time initialization */

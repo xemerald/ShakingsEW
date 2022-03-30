@@ -30,4 +30,6 @@ typedef struct {
 	double      intsteps;
 	double      xmatrix[3];
 	PMATRIX    *pmatrix;
+
+	const void *match;
 } _TRACEINFO;

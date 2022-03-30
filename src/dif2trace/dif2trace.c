@@ -93,6 +93,7 @@ int main ( int argc, char **argv )
 	TracePacket tracebuffer;  /* message which is sent to share ring    */
 	float      *tracedata_f;
 	float      *tracedata_end;
+	const void *_match = NULL;
 
 	double tmp_time;
 
@@ -237,11 +238,12 @@ int main ( int argc, char **argv )
 				}
 			/* Initialize for in-list checking */
 				traceptr = NULL;
+				_match   = NULL;
 			/* If this trace is already inside the local list, it would skip the SCNL filter */
 				if (
 					SCNLFilterSwitch &&
 					!(traceptr = dif2tra_list_find( &tracebuffer.trh2x )) &&
-					!scnlfilter_apply( tracebuffer.msg, recsize, reclogo.type, NULL, NULL )
+					!scnlfilter_apply( tracebuffer.msg, recsize, reclogo.type, &_match, NULL )
 				) {
 				/* Debug */
 					//printf("dif2trace: Found SCNL %s.%s.%s.%s but not in the filter, drop it!\n",
@@ -257,6 +259,21 @@ int main ( int argc, char **argv )
 					);
 					continue;
 				}
+			/* Remap the SCNL of this incoming trace */
+				if ( !traceptr->match ) {
+					scnlfilter_trace_remap( tracebuffer.msg, reclogo.type, traceptr->match );
+				}
+				else {
+					if ( scnlfilter_trace_remap( tracebuffer.msg, reclogo.type, _match ) ) {
+						printf(
+							"dif2trace: Received trace SCNL %s.%s.%s.%s remap to SCNL %s.%s.%s.%s!\n",
+							traceptr->sta, traceptr->chan, traceptr->net, traceptr->loc,
+							tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc
+						);
+					}
+					traceptr->match = _match;
+				}
+
 			/* First time initialization */
 				if ( traceptr->firsttime || fabs(1.0 / tracebuffer.trh2x.samprate - traceptr->delta) > FLT_EPSILON ) {
 					printf(

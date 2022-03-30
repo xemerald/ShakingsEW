@@ -24,4 +24,6 @@ typedef struct {
 	double      delta;
 	IIR_STAGE  *stage;
 	IIR_FILTER *filter;
+
+	const void *match;
 } _TRACEINFO;

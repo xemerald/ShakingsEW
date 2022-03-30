@@ -48,6 +48,7 @@ _TRACEINFO *dif2tra_list_search( const TRACE2X_HEADER *trh2x )
 		traceptr->firsttime = TRUE;
 		traceptr->filter    = NULL;
 		traceptr->stage     = NULL;
+		traceptr->match     = NULL;
 	}
 
 	return traceptr;

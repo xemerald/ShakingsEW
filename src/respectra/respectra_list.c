@@ -45,6 +45,7 @@ _TRACEINFO *rsp_list_search( const TRACE2X_HEADER *trh2x )
 		traceptr = *(_TRACEINFO **)traceptr;
 		traceptr->firsttime = TRUE;
 		traceptr->pmatrix   = NULL;
+		traceptr->match     = NULL;
 	}
 
 	return traceptr;

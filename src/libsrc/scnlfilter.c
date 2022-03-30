@@ -321,7 +321,7 @@ int scnlfilter_init( const char *prog )
  *   20020319 dbh Changed the return code handling
  */
 int scnlfilter_apply(
-	void *inmsg, size_t inlen, unsigned char intype, void *outmsg, void **extra
+	void *inmsg, size_t inlen, unsigned char intype, const void **outmatch, void **outextra
 ) {
 	int            i;
 	TRACE_HEADER  *thd;
@@ -389,23 +389,12 @@ int scnlfilter_apply(
  * Found a message we want to ship!
  * Do some extra checks for trace data only
  */
-	if ( outmsg ) {
-	/* Copy message to output buffer */
-		memcpy(outmsg, inmsg, inlen);
-		thd  = (TRACE_HEADER *)outmsg;
-		thd2 = (TRACE2_HEADER *)outmsg;
-	}
-	if ( match->remap ) {
-	/* Rename its SCNL if appropriate */
-		if ( intype == TypeTraceBuf2 )
-			remap_tracebuf2_scnl( match, thd2 );
-		else if ( intype == TypeTraceBuf )
-			remap_tracebuf_scnl( match, thd );
-	}
-
-/* Extra argument part */
-	if ( extra )
-		*extra = match->extra;
+/* Match pointer output */
+	if ( outmatch )
+		*outmatch = match;
+/* Extra argument output */
+	if ( outextra )
+		*outextra = match->extra;
 /*
 	logit(
 		"e","scnlfilter: accepting msgtype:%d from %s %s %s %s\n",
@@ -414,6 +403,25 @@ int scnlfilter_apply(
 */  /* DEBUG */
 
    return 1;
+}
+
+/*
+ *
+ */
+int scnlfilter_trace_remap( void *inmsg, unsigned char intype, const void *match )
+{
+	const SCNL_Filter *_match = (const SCNL_Filter *)match;
+
+
+	if ( _match && _match->remap ) {
+	/* Rename it by the SCNL from match pointer */
+		if ( intype == TypeTraceBuf2 )
+			return remap_tracebuf2_scnl( _match, (TRACE2_HEADER *)inmsg );
+		else if ( intype == TypeTraceBuf )
+			return remap_tracebuf_scnl( _match, (TRACE_HEADER *)inmsg );
+	}
+
+	return 0;
 }
 
 /*
