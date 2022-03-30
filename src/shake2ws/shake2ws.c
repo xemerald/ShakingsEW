@@ -44,8 +44,8 @@ static void check_station_latency( const void *, const VISIT, const int );
 static SHM_INFO Region;      /* shared memory region to use for i/o    */
 /* */
 #define MAXLOGO 5
-MSG_LOGO Getlogo[MAXLOGO];       /* array for requesting module, type, instid */
-pid_t    MyPid;                  /* for restarts by startstop                 */
+static MSG_LOGO Getlogo[MAXLOGO];       /* array for requesting module, type, instid */
+static pid_t    MyPid;                  /* for restarts by startstop                 */
 
 /* Thread things */
 #define THREAD_STACK  8388608       /* 8388608 Byte = 8192 Kilobyte = 8 Megabyte */

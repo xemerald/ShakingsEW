@@ -17,6 +17,7 @@
 #include <lockfile.h>
 #include <trace_buf.h>
 /* Local header include */
+#include <scnlfilter.h>
 #include <tracepeak.h>
 #include <trace2peak.h>
 #include <trace2peak_list.h>
@@ -32,9 +33,9 @@ static SHM_INFO InRegion;      /* shared memory region to use for i/o    */
 static SHM_INFO OutRegion;     /* shared memory region to use for i/o    */
 /* */
 #define MAXLOGO 5
-MSG_LOGO Putlogo;              /* array for output module, type, instid     */
-MSG_LOGO Getlogo[MAXLOGO];     /* array for requesting module, type, instid */
-pid_t    MyPid;                /* for restarts by startstop                 */
+static MSG_LOGO Putlogo;              /* array for output module, type, instid     */
+static MSG_LOGO Getlogo[MAXLOGO];     /* array for requesting module, type, instid */
+static pid_t    MyPid;                /* for restarts by startstop                 */
 
 /* Things to read or derive from configuration file */
 static char     InRingName[MAX_RING_STR];   /* name of transport ring for i/o    */
@@ -44,6 +45,7 @@ static uint8_t  LogSwitch;                  /* 0 if no logfile should be written
 static uint64_t HeartBeatInterval;          /* seconds between heartbeats        */
 static uint16_t DriftCorrectThreshold;      /* seconds waiting for D.C. */
 static uint16_t nLogo = 0;
+static uint8_t  SCNLFilterSwitch = 0;       /* 0 if no filter command in the file    */
 
 /* Things to look up in the earthworm.h tables with getutil.c functions */
 static int64_t InRingKey;       /* key of transport ring for i/o     */
@@ -444,6 +446,13 @@ static void trace2peak_config( char *configfile )
 				}
 				nLogo++;
 				init[6] = 1;
+			}
+			else if ( scnlfilter_com( "trace2peak" ) ) {
+			/* */
+				SCNLFilterSwitch = 1;
+				if ( scnlfilter_extra_com() ) {
+					
+				}
 			}
 		/* Unknown command */
 			else {
