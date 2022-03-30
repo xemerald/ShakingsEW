@@ -260,7 +260,7 @@ int main ( int argc, char **argv )
 					continue;
 				}
 			/* Remap the SCNL of this incoming trace */
-				if ( !traceptr->match ) {
+				if ( traceptr->match ) {
 					scnlfilter_trace_remap( tracebuffer.msg, reclogo.type, traceptr->match );
 				}
 				else {
