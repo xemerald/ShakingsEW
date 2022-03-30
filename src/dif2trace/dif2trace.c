@@ -259,20 +259,6 @@ int main ( int argc, char **argv )
 					);
 					continue;
 				}
-			/* Remap the SCNL of this incoming trace */
-				if ( traceptr->match ) {
-					scnlfilter_trace_remap( tracebuffer.msg, reclogo.type, traceptr->match );
-				}
-				else {
-					if ( scnlfilter_trace_remap( tracebuffer.msg, reclogo.type, _match ) ) {
-						printf(
-							"dif2trace: Received trace SCNL %s.%s.%s.%s remap to SCNL %s.%s.%s.%s!\n",
-							traceptr->sta, traceptr->chan, traceptr->net, traceptr->loc,
-							tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc
-						);
-					}
-					traceptr->match = _match;
-				}
 
 			/* First time initialization */
 				if ( traceptr->firsttime || fabs(1.0 / tracebuffer.trh2x.samprate - traceptr->delta) > FLT_EPSILON ) {
@@ -282,6 +268,21 @@ int main ( int argc, char **argv )
 					);
 					init_traceinfo( &tracebuffer.trh2x, OperationFlag, traceptr );
 				}
+			/* Remap the SCNL of this incoming trace */
+				if ( traceptr->match ) {
+					scnlfilter_trace_remap( tracebuffer.msg, reclogo.type, traceptr->match );
+				}
+				else {
+					if ( scnlfilter_trace_remap( tracebuffer.msg, reclogo.type, _match ) ) {
+						printf(
+							"dif2trace: Remap received trace SCNL %s.%s.%s.%s to %s.%s.%s.%s!\n",
+							traceptr->sta, traceptr->chan, traceptr->net, traceptr->loc,
+							tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc
+						);
+					}
+					traceptr->match = _match;
+				}
+
 			/* Start processing the gap in trace */
 				if ( fabs(tmp_time = tracebuffer.trh2x.starttime - traceptr->lasttime) > traceptr->delta * 2.0 ) {
 					if ( (long)tracebuffer.trh2x.starttime > (time(&timeNow) + 3) ) {
