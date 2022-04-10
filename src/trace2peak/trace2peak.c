@@ -451,7 +451,7 @@ static void trace2peak_config( char *configfile )
 			/* */
 				SCNLFilterSwitch = 1;
 				if ( scnlfilter_extra_com() ) {
-					
+
 				}
 			}
 		/* Unknown command */
@@ -588,4 +588,14 @@ static void trace2peak_end( void )
 	tra2peak_list_end();
 
 	return;
+}
+
+/*
+ *
+ */
+static void *proc_com_pv_type( const char *command )
+{
+	RECORD_TYPE *result = (RECORD_TYPE *)calloc(1, sizeof(RECORD_TYPE));
+
+	return result;
 }

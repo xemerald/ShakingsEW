@@ -731,11 +731,3 @@ static void operation_diff( _TRACEINFO *traceptr, float *tracedata_f, float *con
 
 	return;
 }
-
-/*
- *
- */
-static void *proc_com_pv_type( const char *command )
-{
-	RECORD_TYPE *result = (RECORD_TYPE *)calloc(1, sizeof(RECORD_TYPE)); 
-}
