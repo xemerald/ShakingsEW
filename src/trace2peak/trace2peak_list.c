@@ -44,6 +44,7 @@ _TRACEPEAK *tra2peak_list_search( const TRACE2X_HEADER *trh2x )
 
 		traceptr = *(_TRACEPEAK **)traceptr;
 		traceptr->firsttime = TRUE;
+		traceptr->match     = NULL;
 	}
 
 	return traceptr;

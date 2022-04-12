@@ -15,7 +15,7 @@ HeartBeatInterval  15             # seconds between heartbeats
 #
 DriftCorrectThreshold   30        # seconds waiting for D.C.
 
-# List of station/channel/network/loc codes to process (Optional):
+# List of station/channel/network/loc codes to process and its value type (Optional):
 #
 # Use any combination of Allow_SCNL (to process data as-is) and
 # Allow_SCNL_Remap (to change the SCNL on the fly) commands.
@@ -33,11 +33,10 @@ DriftCorrectThreshold   30        # seconds waiting for D.C.
 #
 #                 Origin SCNL      Map to SCNL      Peak value type
 #Block_SCNL       BOZ LHZ US *                                            # Block this specific channel
-#Allow_SCNL       JMP ASZ NC 01                          acc              # Allow this specific channel
-#Allow_SCNL       JPS *   NC *                           acc              # Allow all components of JPS NC
+#Allow_SCNL       JMP ASZ NC 01                          acc              # Allow this specific channel and it is acc. value
+#Allow_SCNL       JPS *   NC *                           vel              # Allow all components of JPS NC and they are all vel. value
 #Allow_SCNL_Remap JGR VHZ NC --    *   EHZ * *           vel              # Change component code only
 #Allow_SCNL_Remap CAL *   NC *     ALM *   * *           dis              # Allow all component of CAL, but change the site code to ALM
-
 
 
 # List the message logos to grab from transport ring

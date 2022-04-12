@@ -1,6 +1,8 @@
 #pragma once
-
+/* */
 #include <trace_buf.h>
+/* Default filled in peak value type is acc. */
+#define DEF_PEAK_VALUE_TYPE   2
 
 /* Trace & peak info related struct */
 typedef struct {
@@ -15,4 +17,6 @@ typedef struct {
 	double   delta;
 	double   lasttime;
 	double   average;
+
+	const void *match;
 } _TRACEPEAK;

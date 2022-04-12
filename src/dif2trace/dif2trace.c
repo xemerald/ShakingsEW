@@ -243,7 +243,7 @@ int main ( int argc, char **argv )
 				if (
 					SCNLFilterSwitch &&
 					!(traceptr = dif2tra_list_find( &tracebuffer.trh2x )) &&
-					!scnlfilter_apply( tracebuffer.msg, recsize, reclogo.type, &_match, NULL )
+					!scnlfilter_apply( tracebuffer.msg, recsize, reclogo.type, &_match )
 				) {
 				/* Debug */
 					//printf("dif2trace: Found SCNL %s.%s.%s.%s but not in the filter, drop it!\n",
@@ -268,21 +268,23 @@ int main ( int argc, char **argv )
 					);
 					init_traceinfo( &tracebuffer.trh2x, OperationFlag, traceptr );
 				}
-			/* Remap the SCNL of this incoming trace */
-				if ( traceptr->match ) {
-					scnlfilter_trace_remap( tracebuffer.msg, reclogo.type, traceptr->match );
-				}
-				else {
-					if ( scnlfilter_trace_remap( tracebuffer.msg, reclogo.type, _match ) ) {
-						printf(
-							"dif2trace: Remap received trace SCNL %s.%s.%s.%s to %s.%s.%s.%s!\n",
-							traceptr->sta, traceptr->chan, traceptr->net, traceptr->loc,
-							tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc
-						);
+			/* Remap the SCNL of this incoming trace, if we turned it on */
+				if ( SCNLFilterSwitch ) {
+					if ( traceptr->match ) {
+						scnlfilter_trace_remap( tracebuffer.msg, reclogo.type, traceptr->match );
 					}
-					traceptr->match = _match;
+					else {
+						if ( scnlfilter_trace_remap( tracebuffer.msg, reclogo.type, _match ) ) {
+							printf(
+								"dif2trace: Remap received trace SCNL %s.%s.%s.%s to %s.%s.%s.%s!\n",
+								traceptr->sta, traceptr->chan, traceptr->net, traceptr->loc,
+								tracebuffer.trh2x.sta, tracebuffer.trh2x.chan,
+								tracebuffer.trh2x.net, tracebuffer.trh2x.loc
+							);
+						}
+						traceptr->match = _match;
+					}
 				}
-
 			/* Start processing the gap in trace */
 				if ( fabs(tmp_time = tracebuffer.trh2x.starttime - traceptr->lasttime) > traceptr->delta * 2.0 ) {
 					if ( (long)tracebuffer.trh2x.starttime > (time(&timeNow) + 3) ) {
@@ -647,7 +649,7 @@ static void dif2trace_end( void )
 {
 	tport_detach( &InRegion );
 	tport_detach( &OutRegion );
-	scnlfilter_end();
+	scnlfilter_end( NULL );
 	dif2tra_filter_end();
 	dif2tra_list_end();
 

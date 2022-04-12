@@ -239,7 +239,7 @@ int scnlfilter_extra_com( void *(*extra_proc)( const char * ) )
 		Lists[prev].extra = extra_proc( str );
 /* */
 	if ( !str || !Lists[prev].extra )
-		return 0;
+		return -1;
 
 	return 1;
 }
@@ -320,9 +320,8 @@ int scnlfilter_init( const char *prog )
  *
  *   20020319 dbh Changed the return code handling
  */
-int scnlfilter_apply(
-	void *inmsg, size_t inlen, unsigned char intype, const void **outmatch, void **outextra
-) {
+int scnlfilter_apply( void *inmsg, size_t inlen, unsigned char intype, const void **outmatch )
+{
 	int            i;
 	TRACE_HEADER  *thd;
 	TRACE2_HEADER *thd2;
@@ -392,9 +391,6 @@ int scnlfilter_apply(
 /* Match pointer output */
 	if ( outmatch )
 		*outmatch = match;
-/* Extra argument output */
-	if ( outextra )
-		*outextra = match->extra;
 /*
 	logit(
 		"e","scnlfilter: accepting msgtype:%d from %s %s %s %s\n",
@@ -422,6 +418,20 @@ int scnlfilter_trace_remap( void *inmsg, unsigned char intype, const void *match
 	}
 
 	return 0;
+}
+
+/*
+ *
+ */
+void *scnlfilter_extra_get( const void *match )
+{
+	const SCNL_Filter *_match = (const SCNL_Filter *)match;
+
+/* Extra argument output */
+	if ( _match && _match->extra )
+		return _match->extra;
+	else
+		return NULL;
 }
 
 /*
@@ -465,10 +475,21 @@ void scnlfilter_logmsg( char *msg, int msglen, unsigned char msgtype, char *note
  * scnlfilter_end() - frees allocated memory and
  *                    does any other cleanup stuff
  */
-void scnlfilter_end( void )
+void scnlfilter_end( void (*free_extra)( void * ) )
 {
-	if ( Lists )
+	int          i;
+	SCNL_Filter *current;
+
+/* */
+	if ( Lists ) {
+		if ( free_extra ) {
+			for ( i = 0, current = Lists; i < nSCNL; i++, current++ ) {
+				if ( current->extra )
+					free_extra( current->extra );
+			}
+		}
 		free( Lists );
+	}
 	return;
 }
 
@@ -661,30 +682,30 @@ static SCNL_Filter *realloc_scnlf_list( const char *prog )
  */
 static void swap_double( double *data )
 {
-   char temp;
-   union {
-       char c[8];
-   } dat;
+	uint8_t temp;
+	union {
+		uint8_t c[8];
+	} dat;
 
-   memcpy(&dat, data, sizeof(double));
-   temp     = dat.c[0];
-   dat.c[0] = dat.c[7];
-   dat.c[7] = temp;
+	memcpy(&dat, data, sizeof(double));
+	temp     = dat.c[0];
+	dat.c[0] = dat.c[7];
+	dat.c[7] = temp;
 
-   temp     = dat.c[1];
-   dat.c[1] = dat.c[6];
-   dat.c[6] = temp;
+	temp     = dat.c[1];
+	dat.c[1] = dat.c[6];
+	dat.c[6] = temp;
 
-   temp     = dat.c[2];
-   dat.c[2] = dat.c[5];
-   dat.c[5] = temp;
+	temp     = dat.c[2];
+	dat.c[2] = dat.c[5];
+	dat.c[5] = temp;
 
-   temp     = dat.c[3];
-   dat.c[3] = dat.c[4];
-   dat.c[4] = temp;
-   memcpy(data, &dat, sizeof(double));
+	temp     = dat.c[3];
+	dat.c[3] = dat.c[4];
+	dat.c[4] = temp;
+	memcpy(data, &dat, sizeof(double));
 
-   return;
+	return;
 }
 
 /*
@@ -697,19 +718,15 @@ static void swap_double( double *data )
  */
 static int compare_scnl( const void *s1, const void *s2 )
 {
-   int rc;
-   SCNL_Filter *t1 = (SCNL_Filter *) s1;
-   SCNL_Filter *t2 = (SCNL_Filter *) s2;
+	int rc;
+	SCNL_Filter *t1 = (SCNL_Filter *)s1;
+	SCNL_Filter *t2 = (SCNL_Filter *)s2;
 
-   rc = strcmp( t1->sta, t2->sta );
-   if ( rc != 0 ) return rc;
-
-   rc = strcmp( t1->chan, t2->chan );
-   if ( rc != 0 ) return rc;
-
-   rc = strcmp( t1->net,  t2->net );
-   if ( rc != 0 ) return rc;
-
-   rc = strcmp( t1->loc,  t2->loc );
-   return rc;
+	if ( (rc = strcmp(t1->sta, t2->sta)) )
+		return rc;
+	if ( (rc = strcmp(t1->chan, t2->chan)) )
+		return rc;
+	if ( (rc = strcmp(t1->net, t2->net)) )
+		return rc;
+	return rc = strcmp(t1->loc, t2->loc);
 }

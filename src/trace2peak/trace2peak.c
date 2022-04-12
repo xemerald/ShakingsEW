@@ -18,6 +18,7 @@
 #include <trace_buf.h>
 /* Local header include */
 #include <scnlfilter.h>
+#include <recordtype.h>
 #include <tracepeak.h>
 #include <trace2peak.h>
 #include <trace2peak_list.h>
@@ -27,6 +28,8 @@ static void trace2peak_config( char * );
 static void trace2peak_lookup( void );
 static void trace2peak_status( unsigned char, short, char * );
 static void trace2peak_end( void );                /* Free all the local memory & close socket */
+
+static void *proc_com_pv_type( const char * );
 
 /* Ring messages things */
 static SHM_INFO InRegion;      /* shared memory region to use for i/o    */
@@ -78,13 +81,15 @@ int main ( int argc, char **argv )
 	char    *lockfile;
 	int32_t  lockfile_fd;
 
-	_TRACEPEAK   *traceptr;
-	TracePacket   tracebuffer;  /* message which is sent to share ring    */
-	float        *tracedata_f;
-	float        *tracedata_end;
-	double        peak_value;
-	double        peak_time;
-	double        tmp_time;
+	_TRACEPEAK *traceptr;
+	TracePacket tracebuffer;  /* message which is sent to share ring    */
+	float      *tracedata_f;
+	float      *tracedata_end;
+	double      peak_value;
+	double      peak_time;
+	double      tmp_time;
+	const void *_match = NULL;
+	const void *_extra = NULL;
 
 	TRACE_PEAKVALUE obuffer;
 
@@ -203,9 +208,23 @@ int main ( int argc, char **argv )
 					);
 					continue;
 				}
-
+			/* Initialize for in-list checking */
+				traceptr = NULL;
+				_match   = NULL;
+				_extra   = NULL;
+			/* If this trace is already inside the local list, it would skip the SCNL filter */
+				if (
+					SCNLFilterSwitch &&
+					!(traceptr = tra2peak_list_find( &tracebuffer.trh2x )) &&
+					!scnlfilter_apply( tracebuffer.msg, recsize, reclogo.type, &_match )
+				) {
+				/* Debug */
+					//printf("trace2peak: Found SCNL %s.%s.%s.%s but not in the filter, drop it!\n",
+					//tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc);
+					continue;
+				}
 			/* */
-				if ( (traceptr = tra2peak_list_search( &(tracebuffer.trh2x) )) == NULL ) {
+				if ( !traceptr && !(traceptr = tra2peak_list_search( &tracebuffer.trh2x )) ) {
 				/* Error when insert into the tree */
 					logit(
 						"e", "trace2peak: %s.%s.%s.%s insert into trace tree error, drop this trace.\n",
@@ -225,6 +244,26 @@ int main ( int argc, char **argv )
 					traceptr->lasttime   = 0.0;
 					traceptr->average    = 0.0;
 				}
+			/* Remap the SCNL of this incoming trace */
+				if ( SCNLFilterSwitch ) {
+					if ( traceptr->match ) {
+						scnlfilter_trace_remap( tracebuffer.msg, reclogo.type, traceptr->match );
+					}
+					else {
+						if ( scnlfilter_trace_remap( tracebuffer.msg, reclogo.type, _match ) ) {
+							printf(
+								"trace2peak: Remap received trace SCNL %s.%s.%s.%s to %s.%s.%s.%s!\n",
+								traceptr->sta, traceptr->chan, traceptr->net, traceptr->loc,
+								tracebuffer.trh2x.sta, tracebuffer.trh2x.chan,
+								tracebuffer.trh2x.net, tracebuffer.trh2x.loc
+							);
+						}
+						traceptr->match = _match;
+					}
+				/* Fetch the extra argument */
+					_extra = scnlfilter_extra_get( traceptr->match );
+				}
+
 			/* Start processing the gap in trace */
 				if ( fabs(tmp_time = tracebuffer.trh2x.starttime - traceptr->lasttime) > traceptr->delta * 2.0 ) {
 					if ( (long)tracebuffer.trh2x.starttime > (time(&timeNow) + 3) ) {
@@ -303,8 +342,9 @@ int main ( int argc, char **argv )
 				memcpy(obuffer.net, traceptr->net, TRACE2_NET_LEN);
 				memcpy(obuffer.loc, traceptr->loc, TRACE2_LOC_LEN);
 				memcpy(obuffer.chan, traceptr->chan, TRACE2_CHAN_LEN);
-			/* Temporally, we use the pinno in tracebuf to store the record type */
-				obuffer.recordtype = tracebuffer.trh2x.pinno;
+			/* Obsoleted: Temporally, we use the pinno in tracebuf to store the record type */
+				//obuffer.recordtype = tracebuffer.trh2x.pinno;
+				obuffer.recordtype = _extra ? *(RECORD_TYPE *)_extra : DEF_PEAK_VALUE_TYPE;
 				obuffer.sourcemod  = reclogo.mod;
 			/* Dump the peak information into output message */
 				obuffer.peakvalue  = peak_value;
@@ -333,7 +373,7 @@ exit_procedure:
  */
 static void trace2peak_config( char *configfile )
 {
-	char  init[7];     /* init flags, one byte for each required command */
+	char  init[8];     /* init flags, one byte for each required command */
 	char *com;
 	char *str;
 
@@ -344,8 +384,8 @@ static void trace2peak_config( char *configfile )
 	uint32_t i;
 
 /* Set to zero one init flag for each required command */
-	ncommand = 7;
-	for( i = 0; i < ncommand; i++ )
+	ncommand = 8;
+	for ( i = 0; i < ncommand; i++ )
 		init[i] = 0;
 /* Open the main configuration file */
 	nfiles = k_open( configfile );
@@ -450,8 +490,13 @@ static void trace2peak_config( char *configfile )
 			else if ( scnlfilter_com( "trace2peak" ) ) {
 			/* */
 				SCNLFilterSwitch = 1;
-				if ( scnlfilter_extra_com() ) {
-
+				if ( scnlfilter_extra_com( proc_com_pv_type ) < 0 ) {
+				/* Maybe we need much more checking for this command */
+					for ( str = k_com(), i = 0; *str == ' ' && i < strlen(str); str++, i++ );
+					if ( strncmp(str, "Block_SCNL", 10) ) {
+						logit("o", "trace2peak: No peak value type define in command: %s ", k_com());
+						logit("o", ", %d(%s) will be filled!\n", DEF_PEAK_VALUE_TYPE, typenum2str(DEF_PEAK_VALUE_TYPE));
+					}
 				}
 			}
 		/* Unknown command */
@@ -484,6 +529,7 @@ static void trace2peak_config( char *configfile )
 		if ( !init[4] ) logit("e", "<HeartBeatInterval> "    );
 		if ( !init[5] ) logit("e", "<DriftCorrectThreshold> ");
 		if ( !init[6] ) logit("e", "any <GetEventsFrom> "    );
+		if ( !init[7] ) logit("e", "any SCNL filter "    );
 
 		logit("e", "command(s) in <%s>; exiting!\n", configfile);
 		exit(-1);
@@ -585,6 +631,7 @@ static void trace2peak_end( void )
 {
 	tport_detach( &InRegion );
 	tport_detach( &OutRegion );
+	scnlfilter_end( free );
 	tra2peak_list_end();
 
 	return;
@@ -596,6 +643,9 @@ static void trace2peak_end( void )
 static void *proc_com_pv_type( const char *command )
 {
 	RECORD_TYPE *result = (RECORD_TYPE *)calloc(1, sizeof(RECORD_TYPE));
+
+/* */
+	*result = typestr2num( command );
 
 	return result;
 }
