@@ -220,7 +220,7 @@ int main ( int argc, char **argv )
 				shake2redis_end();
 				exit(-1);
 			}
-		/* Just wait for the connection finish */
+		/* Just wait for the connection & preparation */
 			sleep_ew(1000);
 			OutputThreadStatus = THREAD_ALIVE;
 		}
@@ -672,8 +672,8 @@ static thr_ret shake2redis_output_thread( void *dummy )
 	redisContext *redis = redisConnect(RedisHost, RedisPort);
 /* */
 	int            rdrec_num = MAX_TYPE_PEAKVALUE * LATENCY_THRESHOLD;
-	REDIS_RECORDS  rdrec_pv[rdrec_num];
 	REDIS_RECORDS  rdrec_oneshot;
+	REDIS_RECORDS *rdrec_main  = NULL;
 	REDIS_RECORDS *rdrec_ptr   = NULL;
 	REDIS_RECORDS *rdrec_empty = NULL;
 /* */
@@ -697,11 +697,16 @@ static thr_ret shake2redis_output_thread( void *dummy )
 			goto disconnect;
 	}
 /* */
-	for ( i = 0; i < rdrec_num; i++ ) {
-		rdrec_ptr = rdrec_pv + i;
-		INIT_REDIS_RECORDS( rdrec_ptr );
+	rdrec_main = (REDIS_RECORDS *)calloc(rdrec_num, sizeof(REDIS_RECORDS));
+	if ( rdrec_main ) {
+		for ( i = 0, rdrec_ptr = rdrec_main; i < rdrec_num; i++, rdrec_ptr++ )
+			INIT_REDIS_RECORDS( rdrec_ptr );
+		INIT_REDIS_RECORDS( &rdrec_oneshot );
 	}
-	INIT_REDIS_RECORDS( &rdrec_oneshot );
+	else {
+		logit("e", "shake2redis: Cannot allocate the memory for Redis buffer, exiting!\n");
+		exit(-1);
+	}
 
 /* Processing loop */
 	do {
@@ -715,8 +720,7 @@ static thr_ret shake2redis_output_thread( void *dummy )
 				max_rec = MAX_RECORDS_PER_RDREC;
 		/* */
 			timenow = get_precise_timenow();
-			for ( i = 0; i < rdrec_num; i++ ) {
-				rdrec_ptr = rdrec_pv + i;
+			for ( i = 0, rdrec_ptr = rdrec_main; i < rdrec_num; i++, rdrec_ptr++ ) {
 				if ( !REDIS_RECORDS_IS_EMPTY( rdrec_ptr ) && (timenow - rdrec_ptr->timestamp) > 0.1 ) {
 					if ( output_hashtable_rdrec( redis, rdrec_ptr ) )
 						goto disconnect;
@@ -728,13 +732,12 @@ static thr_ret shake2redis_output_thread( void *dummy )
 				sk2rd_list_walk( check_station_latency, &timelastcheck );
 			}
 		/* Wait for next message */
-			sleep_ew(10);
+			sleep_ew(5);
 			continue;
 		}
 
 	/* Find a redis record buffer to append this shake record */
-		for ( i = 0, rdrec_empty = NULL; i < rdrec_num; i++ ) {
-			rdrec_ptr = rdrec_pv + i;
+		for ( i = 0, rdrec_ptr = rdrec_main, rdrec_empty = NULL; i < rdrec_num; i++, rdrec_ptr++ ) {
 			if ( !REDIS_RECORDS_IS_EMPTY( rdrec_ptr ) ) {
 			/* This shake record belongs to the redis record */
 				if ( SHAKEREC_BELONGS_REDISREC( rdrec_ptr, &shakerec ) )
@@ -754,7 +757,7 @@ static thr_ret shake2redis_output_thread( void *dummy )
 					"et", "shake2redis: Redis records buffer is full, one-shot this record(%s %s)!\n",
 					shakerec.table, shakerec.field
 				);
-			/* Since the buffer is already full, we use the oneshot buffer for temporary quick output */
+			/* Since the buffer is already full, we use the oneshot buffer for immediately output */
 				rdrec_ptr = &rdrec_oneshot;
 			}
 		/* Fill the table name */
