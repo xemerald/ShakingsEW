@@ -113,7 +113,9 @@ int main ( int argc, char **argv )
 		fprintf(stderr, "one instance of %s is already running, exiting\n", argv[0]);
 		exit(-1);
 	}
-
+/* Initialize the SCNL filter required arguments */
+	if ( SCNLFilterSwitch )
+		scnlfilter_init( "trace2peak" );
 /* Get process ID for heartbeat messages */
 	MyPid = getpid();
 	if( MyPid == -1 ) {

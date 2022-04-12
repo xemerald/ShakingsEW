@@ -391,6 +391,10 @@ int scnlfilter_trace_apply( const void *inmsg, const unsigned char intype, const
 	const TRACE2_HEADER *trh2 = (const TRACE2_HEADER *)inmsg;
 	const TRACE_HEADER  *trh  = (const TRACE_HEADER *)inmsg;
 
+/* */
+	if ( !FilterInit )
+		scnlfilter_init( "scnlfilter_apply" );
+/* */
 	if ( intype == TypeTraceBuf2 )
 		return scnlfilter_apply( trh2->sta, trh2->chan, trh2->net, trh2->loc, outmatch );
 	else if ( intype == TypeTraceBuf )
