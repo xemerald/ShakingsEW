@@ -379,11 +379,11 @@ static void trace2peak_config( char *configfile )
 	char *com;
 	char *str;
 
-	uint32_t ncommand;     /* # of required commands you expect to process   */
-	uint32_t nmiss;        /* number of required commands that were missed   */
-	uint32_t nfiles;
-	uint32_t success;
-	uint32_t i;
+	int ncommand;     /* # of required commands you expect to process   */
+	int nmiss;        /* number of required commands that were missed   */
+	int nfiles;
+	int success;
+	int i;
 
 /* Set to zero one init flag for each required command */
 	ncommand = 7;
@@ -492,7 +492,7 @@ static void trace2peak_config( char *configfile )
 			else if ( scnlfilter_com( "trace2peak" ) ) {
 			/* */
 				SCNLFilterSwitch = 1;
-				for ( str = k_com(), i = 0; *str == ' ' && i < strlen(str); str++, i++ );
+				for ( str = k_com(), i = 0; *str == ' ' && i < (int)strlen(str); str++, i++ );
 				if ( strncmp(str, "Block_SCNL", 10) ) {
 				/* Maybe we need much more checking for this command */
 					if ( scnlfilter_extra_com( proc_com_pv_type ) < 0 ) {

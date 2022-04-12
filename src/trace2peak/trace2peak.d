@@ -35,7 +35,7 @@ GetEventsFrom  INST_WILDCARD      MOD_WILDCARD    TYPE_TRACEBUF2
 # Note, the Block commands must precede any wildcard commands for
 # the blocking to occur.
 #
-#                 Origin SCNL      Map to SCNL      Peak value type
+#                 Origin SCNL      Map to SCNL      Peak Value Type
 #Block_SCNL       BOZ LHZ US *                                            # Block this specific channel
 #Allow_SCNL       JMP ASZ NC 01                          acc              # Allow this specific channel
                                                                           # and it is acc. value

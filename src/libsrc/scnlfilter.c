@@ -29,6 +29,8 @@
 #include <trace_buf.h>
 #include <kom.h>
 #include <swap.h>
+/* */
+#include <tracepeak.h>
 
 #define INCREMENT_SCNL  8                    /* increment the limit of # scnl's    */
 #define STA_STRLEN    (TRACE2_STA_LEN - 1)   /* max string-length of station code  */
@@ -67,6 +69,7 @@ typedef struct {
 static int          filter_wildcards( const SCNL_Filter *, const SCNL_Filter * );
 static int          remap_tracebuf_scnl( const SCNL_Filter *, TRACE_HEADER * );
 static int          remap_tracebuf2_scnl( const SCNL_Filter *, TRACE2_HEADER * );
+static int          remap_tracepv_scnl( const SCNL_Filter *, TRACE_PEAKVALUE * );
 static double       get_wavetime( const TRACE2_HEADER * );
 static char        *copytrim( char *, const char *, const int );
 static SCNL_Filter *realloc_scnlf_list( const char * );
@@ -82,6 +85,7 @@ static int    nWild      = 0;     /* # of Wildcards used in config file     */
 /* */
 static unsigned char TypeTraceBuf;
 static unsigned char TypeTraceBuf2;   /* with Loc */
+static unsigned char TypeTracePeak;   /* */
 /* */
 #define IS_WILD(SCNL)                 (!strcmp((SCNL), WILDCARD_STR))
 #define IS_MATCH(SCNL_A, SCNL_B)      (!strcmp((SCNL_A), (SCNL_B)))
@@ -267,9 +271,12 @@ int scnlfilter_init( const char *prog )
 	}
 	if ( GetType("TYPE_TRACEBUF2", &TypeTraceBuf2) != 0 ) {
 		logit("e", "%s: Invalid message type <TYPE_TRACEBUF2>\n", prog);
-		return( -1 );
+		return -1;
 	}
-
+	if ( GetType("TYPE_TRACEPEAK", &TypeTracePeak) != 0 ) {
+		logit("e", "%s: Invalid message type <TYPE_TRACEPEAK>\n", prog);
+		return -1;
+	}
 /* Sort and Log list of SCNL's that we're handling */
 	if ( nWild == 0 ) {
 		qsort(Lists, nSCNL, sizeof(SCNL_Filter), compare_scnl);
@@ -388,8 +395,9 @@ int scnlfilter_apply( const char *sta, const char *chan, const char *net, const 
  */
 int scnlfilter_trace_apply( const void *inmsg, const unsigned char intype, const void **outmatch )
 {
-	const TRACE2_HEADER *trh2 = (const TRACE2_HEADER *)inmsg;
-	const TRACE_HEADER  *trh  = (const TRACE_HEADER *)inmsg;
+	const TRACE2_HEADER   *trh2 = (const TRACE2_HEADER *)inmsg;
+	const TRACE_HEADER    *trh  = (const TRACE_HEADER *)inmsg;
+	const TRACE_PEAKVALUE *tpv  = (const TRACE_PEAKVALUE *)inmsg;
 
 /* */
 	if ( !FilterInit )
@@ -399,6 +407,8 @@ int scnlfilter_trace_apply( const void *inmsg, const unsigned char intype, const
 		return scnlfilter_apply( trh2->sta, trh2->chan, trh2->net, trh2->loc, outmatch );
 	else if ( intype == TypeTraceBuf )
 		return scnlfilter_apply( trh->sta, trh->chan, trh->net, NULL, outmatch );
+	else if ( intype == TypeTracePeak )
+		return scnlfilter_apply( tpv->sta, tpv->chan, tpv->net, tpv->loc, outmatch );
 	else
 		return 0;
 }
@@ -417,6 +427,8 @@ int scnlfilter_trace_remap( void *inmsg, const unsigned char intype, const void 
 			return remap_tracebuf2_scnl( _match, (TRACE2_HEADER *)inmsg );
 		else if ( intype == TypeTraceBuf )
 			return remap_tracebuf_scnl( _match, (TRACE_HEADER *)inmsg );
+		else if ( intype == TypeTracePeak )
+			return remap_tracepv_scnl( _match, (TRACE_PEAKVALUE *)inmsg );
 	}
 
 	return 0;
@@ -583,6 +595,37 @@ static int remap_tracebuf2_scnl( const SCNL_Filter *filter, TRACE2_HEADER *trh2 
 				break;
 			case LOC_FILTER_BIT:
 				memcpy(trh2->loc, filter->rloc, TRACE2_LOC_LEN);
+			default:
+				break;
+			}
+		}
+	}
+
+	return 1;
+}
+
+/*
+ *
+ */
+static int remap_tracepv_scnl( const SCNL_Filter *filter, TRACE_PEAKVALUE *tpv )
+{
+	uint8_t fbit;
+
+/* */
+	for ( fbit = STA_FILTER_BIT; fbit > 0; fbit >>= 1 ) {
+		if ( !(filter->rwilds & fbit) ) {
+			switch ( fbit ) {
+			case STA_FILTER_BIT:
+				memcpy(tpv->sta, filter->rsta, TRACE2_STA_LEN);
+				break;
+			case CHAN_FILTER_BIT:
+				memcpy(tpv->chan, filter->rchan, TRACE2_CHAN_LEN);
+				break;
+			case NET_FILTER_BIT:
+				memcpy(tpv->net, filter->rnet, TRACE2_NET_LEN);
+				break;
+			case LOC_FILTER_BIT:
+				memcpy(tpv->loc, filter->rloc, TRACE2_LOC_LEN);
 			default:
 				break;
 			}

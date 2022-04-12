@@ -21,7 +21,21 @@ ExpireTime            86400        # Expired time of record in seconds
 #              Installation       Module          Message Types
 GetEventsFrom  INST_WILDCARD      MOD_WILDCARD    TYPE_TRACEPEAK
 
-# List of station/channel/network/loc codes to process and its value type (Optional):
+# The type of the peak value which will be setted:
+#
+# Something about "Table Key Prefix":
+# The Hash table name would be like "XXX:<UNIX_TIMESTAMP>", where XXX is
+# the prefix you setted here. And max length of prefix is 16 (include NULL termination).
+#
+# List the peak value type you want to set in the redis server.
+#                  Index#    Value Types    Table Key Prefix
+SetPeakValueType     0          acc               PGA
+SetPeakValueType     1          vel               PGV
+SetPeakValueType     2          dis               PGD
+SetPeakValueType     3          sa                SAL
+SetPeakValueType     4          sa                SAS
+
+# List of station/channel/network/loc codes to process and its set value index (link to SetPeakValueType):
 #
 # Use any combination of Allow_SCNL (to process data as-is) and
 # Allow_SCNL_Remap (to change the SCNL on the fly) commands.
@@ -37,41 +51,27 @@ GetEventsFrom  INST_WILDCARD      MOD_WILDCARD    TYPE_TRACEPEAK
 # Note, the Block commands must precede any wildcard commands for
 # the blocking to occur.
 #
-#                 Origin SCNL      Map to SCNL      Peak value type
+#                 Origin SCNL      Map to SCNL      Set Value Index
 #Block_SCNL       BOZ LHZ US *                                            # Block this specific channel
-#Allow_SCNL       JMP ASZ NC 01                          acc              # Allow this specific channel
-                                                                          # and it is acc. value
-#Allow_SCNL       JPS *   NC *                           vel              # Allow all components of JPS NC
-                                                                          # and they are all vel. value
-#Allow_SCNL_Remap JGR VHZ NC --    *   EHZ * *           vel              # Change component code only
-#Allow_SCNL_Remap CAL *   NC *     ALM *   * *           dis              # Allow all component of CAL, but change the site code to ALM
+#Allow_SCNL       JMP ASZ NC 01                          0                # Allow this specific channel
+                                                                          # and it belongs to PGA
+#Allow_SCNL       JPS *   NC *                           1                # Allow all components of JPS NC
+                                                                          # and they all belong to PGV
+#Allow_SCNL_Remap JGR VHZ NC --    *   EHZ * *           1                # Change component code only
+#Allow_SCNL_Remap CAL *   NC *     ALM *   * *           2                # Allow all component of CAL, but change the site code to ALM
 
-# The type of the peak value which will be grabbed:
-#
-# Something about "Source Module":
-# The Source Module column use the module id setted inside the earthworm.d
-# You can directly use the wildcard if thera is only one module generate the type
-# of value; Otherwise, you should designate the module id for distinguishing.
-#
-# List the peak value type to grab from transport ring.
-#                  Value Types    Key Prefix      Source Module
-GetPeakValueType      acc           PGA           MOD_WILDCARD
-GetPeakValueType      vel           PGV           MOD_WILDCARD
-GetPeakValueType      dis           PGD           MOD_WILDCARD
-GetPeakValueType      sa            SAL           MOD_WILDCARD
-GetPeakValueType      sa            SAS           MOD_RESPECTRA
 
+# List of generating intensity index (Under construction):
 #
-#
-# Something about "Input Value":
-# The input value column link with "GetPeakValueType" above, it use the bit
-# position as setting method: The first input value list above should be
-# the first bit from right to left; therefore, the second input message should
-# be the second bit and so on... By the way, the input value should be in
-# decimal & the maximum bit position is 8.
+# Something about "Input Peak Value":
+# The input value column link to "SetPeakValueType" above, it use the bit
+# position as setting method: The first (whose Index# is 0) input value list above
+# should be the first bit from right to left; therefore, the second (whose Index# is 1)
+# input message should be the second bit and so on... By the way, the input value
+# should be in decimal & the maximum bit position is 8.
 #
 # List the Intensity type to generate from those peak values.
-#                  Intensity Types       Input Value
+#                  Intensity Types       Input Peak Value
 GenIntensityType        CWBPGA                1
 GenIntensityType        CWBPGV                2
 GenIntensityType        CWB2020               3

@@ -8,7 +8,6 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
-#include <ctype.h>
 #include <math.h>
 #include <time.h>
 /* Header of libhiredis include */
@@ -21,28 +20,12 @@
 /* Local header include */
 #include <dl_chain_list.h>
 #include <recordtype.h>
+#include <scnlfilter.h>
 #include <shakeint.h>
 #include <tracepeak.h>
 #include <shake2redis.h>
 #include <shake2redis_list.h>
 #include <shake2redis_msg_queue.h>
-
-/* */
-typedef struct {
-	char   table[MAX_FIELD_LENGTH];
-	char   field[MAX_FIELD_LENGTH];
-	double value;
-} SHAKE_RECORD;
-/* */
-typedef struct {
-	char   records[4096];
-	char  *npos;
-	int    record_num;
-	double timestamp;
-} REDIS_RECORDS;
-
-#define MAX_RECORDS_PER_RDREC  64
-#define MIN_RECORDS_PER_RDREC  8
 
 /* Functions prototype in this source file */
 static void shake2redis_config( char * );
@@ -57,14 +40,15 @@ static int   append_shakerec2rdrec( REDIS_RECORDS *, const SHAKE_RECORD * );
 static char *append_str2rdrec( REDIS_RECORDS *, const char * );
 static char *terminate_rdrec( REDIS_RECORDS * );
 /* */
-static int    get_i_peak_value( const int, const int );
 static int    is_single_pvalue_sync( const STATION_PEAK *, const int );
 static int    is_needed_pvalues_sync( const STATION_PEAK *, const int );
 static void   update_related_intensities( STATION_PEAK *, const int );
 static double update_single_pvalue( STATION_PEAK *, const int );
 static void   check_station_latency( const void *, const int, void * );
+static double get_precise_timenow( void );
+static void  *proc_com_sv_index( const char * );
+static int    proc_com_input_pv( int, const int );
 /* */
-static double        get_precise_timenow( void );
 static SHAKE_RECORD *enrich_shake_record(
 	SHAKE_RECORD *, const char *, const char *, const char *, const char *, const double, const double
 );
@@ -117,11 +101,10 @@ static char Text[150];         /* string for log/error messages          */
 /* */
 static struct {
 	uint16_t rectype;
-	uint8_t  srcmod;
 	uint8_t  nrelated;
 	uint8_t  related_int[MAX_TYPE_INTENSITY];
-	char     prefix[16];
-} GetPeakValue[MAX_TYPE_PEAKVALUE];
+	char     prefix[MAX_PREFIX_LENGTH];
+} SetPeakValue[MAX_TYPE_PEAKVALUE];
 /* */
 static struct {
 	uint8_t  inttype;
@@ -161,6 +144,8 @@ int main ( int argc, char **argv )
 	TracePeakPacket buffer;
 	STATION_PEAK   *stapeak;
 	CHAN_PEAK      *chapeak;
+	const void     *_match = NULL;
+	const void     *_extra = NULL;
 /* */
 #if defined( _V710 )
 	ew_thread_t   tid;            /* Thread ID */
@@ -188,8 +173,9 @@ int main ( int argc, char **argv )
 		exit (-1);
 	}
 /* */
+	scnlfilter_init( "shake2redis" );
+/* */
 	Finish = 1;
-
 /* Get process ID for heartbeat messages */
 	MyPid = getpid();
 	if ( MyPid == -1 ) {
@@ -271,18 +257,35 @@ int main ( int argc, char **argv )
 
 		/* Process the message */
 			if ( reclogo.type == TypeTracePeak ) {
-				if ( (res = get_i_peak_value( buffer.tpv.recordtype, buffer.tpv.sourcemod )) >= 0 ) {
-				/* Find the station information within the binary tree */
-					if ( (stapeak = sk2rd_list_search( buffer.tpv.sta, buffer.tpv.net, buffer.tpv.loc )) == NULL ) {
-					/* Error when insert into the tree */
-						logit(
-							"e", "shake2redis: %s.%s.%s insert into station tree error, drop this trace.\n",
-							buffer.tpv.sta, buffer.tpv.net, buffer.tpv.loc
-						);
-						continue;
-					}
-				/* And then find the channel information in the linked-list */
-					if ( (chapeak = sk2rd_list_chlist_search( stapeak, res, buffer.tpv.chan )) == NULL ) {
+			/* Initialize for in-list checking */
+				stapeak = NULL;
+				chapeak = NULL;
+				_match  = NULL;
+				_extra  = NULL;
+			/* If this trace is already inside the local list, it would skip the SCNL filter */
+				if (
+					!((stapeak = sk2rd_list_find( buffer.tpv.sta, buffer.tpv.net, buffer.tpv.loc )) &&
+					(chapeak = sk2rd_list_chlist_find( stapeak, buffer.tpv.chan ))) &&
+					!scnlfilter_trace_apply( buffer.msg, reclogo.type, &_match )
+				) {
+				/* Debug */
+					//printf("shake2redis: Found SCNL %s.%s.%s.%s but not in the filter, drop it!\n",
+					//buffer.tpv.sta, buffer.tpv.chan, buffer.tpv.net, buffer.tpv.loc);
+					continue;
+				}
+			/* If this is the first time recv. this station, try to insert into the binary tree */
+				if ( !stapeak && !(stapeak = sk2rd_list_search( buffer.tpv.sta, buffer.tpv.net, buffer.tpv.loc )) ) {
+				/* Error when insert into the tree */
+					logit(
+						"e", "shake2redis: %s.%s.%s insert into station tree error, drop this trace.\n",
+						buffer.tpv.sta, buffer.tpv.net, buffer.tpv.loc
+					);
+					continue;
+				}
+			/* And then the same as the channel */
+				if ( !chapeak ) {
+					_extra = scnlfilter_extra_get( _match );
+					if ( !(chapeak = sk2rd_list_chlist_search( stapeak, buffer.tpv.chan, *(int *)_extra )) ) {
 					/* Error when insert into the tree */
 						logit(
 							"e", "shake2redis: %s.%s.%s.%s insert into channel list error, drop this trace.\n",
@@ -290,17 +293,34 @@ int main ( int argc, char **argv )
 						);
 						continue;
 					}
-				/* Check if the peak value is newer than the record */
-					if ( buffer.tpv.peaktime > chapeak->ptime ) {
-						chapeak->ptime  = buffer.tpv.peaktime;
-						chapeak->pvalue = fabs(buffer.tpv.peakvalue);
+					if ( scnlfilter_trace_remap( buffer.msg, reclogo.type, _match ) ) {
+					/* First time remap the trace's SCNL */
+						printf(
+							"shake2redis: Remap received trace SCNL %s.%s.%s.%s to %s.%s.%s.%s!\n",
+							stapeak->sta, chapeak->chan, stapeak->net, stapeak->loc,
+							buffer.tpv.sta, buffer.tpv.chan, buffer.tpv.net, buffer.tpv.loc
+						);
 					}
-				/* Checking for synchronization of the single type of peak value... */
-					if ( is_single_pvalue_sync( stapeak, res ) ) {
-					/* If sync. then check all of the peak values... */
-						update_single_pvalue( stapeak, res );
-						update_related_intensities( stapeak, res );
-					}
+					chapeak->match = _match;
+				}
+				else {
+					scnlfilter_trace_remap( buffer.msg, reclogo.type, chapeak->match );
+				/* Fetch the extra argument */
+					_extra = scnlfilter_extra_get( chapeak->match );
+				}
+
+			/* Check if the peak value is newer than the record */
+				if ( buffer.tpv.peaktime > chapeak->ptime ) {
+					chapeak->ptime  = buffer.tpv.peaktime;
+					chapeak->pvalue = fabs(buffer.tpv.peakvalue);
+				}
+			/* Fetching the peak value index from SCNL filter extra argument */
+				res = *(int *)_extra;
+			/* Checking for synchronization of the single type of peak value... */
+				if ( is_single_pvalue_sync( stapeak, res ) ) {
+				/* If sync. then check all of the peak values... */
+					update_single_pvalue( stapeak, res );
+					update_related_intensities( stapeak, res );
 				}
 			}
 		} while ( 1 );  /* end of message-processing-loop */
@@ -323,18 +343,18 @@ exit_procedure:
  */
 static void shake2redis_config( char *configfile )
 {
-	char  init[9];     /* init flags, one byte for each required command */
+	char  init[10];     /* init flags, one byte for each required command */
 	char *com;
 	char *str;
 
-	uint32_t ncommand;     /* # of required commands you expect to process   */
-	uint32_t nmiss;        /* number of required commands that were missed   */
-	uint32_t nfiles;
-	uint32_t success;
-	uint32_t i;
+	int ncommand;     /* # of required commands you expect to process   */
+	int nmiss;        /* number of required commands that were missed   */
+	int nfiles;
+	int success;
+	int i;
 
 /* Set to zero one init flag for each required command */
-	ncommand = 9;
+	ncommand = 10;
 	for ( i = 0; i < ncommand; i++ )
 		init[i] = 0;
 
@@ -456,36 +476,53 @@ static void shake2redis_config( char *configfile )
 				init[6] = 1;
 			}
 		/* 7 */
-			else if ( k_its("GetPeakValueType") ) {
+			else if ( k_its("SetPeakValueType") ) {
 				if ( (nPeakValue + 1) >= MAX_TYPE_PEAKVALUE ) {
-					logit("e", "shake2redis: Too many <GetPeakValueType> commands in <%s>", configfile);
+					logit("e", "shake2redis: Too many <SetPeakValueType> commands in <%s>", configfile);
 					logit("e", "; max=%d; exiting!\n", (int)MAX_TYPE_PEAKVALUE);
 					exit(-1);
 				}
-				if ( (str = k_str()) ) {
-					GetPeakValue[nPeakValue].rectype = typestr2num( str );
-					logit(
-						"o", "shake2redis: No.%d Peak value type set to %s:%d!\n",
-						nPeakValue, str, GetPeakValue[nPeakValue].rectype
-					);
-				}
-				if ( (str = k_str()) ) {
-					strcpy(GetPeakValue[nPeakValue].prefix, str);
-					for( i = 0; GetPeakValue[nPeakValue].prefix[i]; i++ )
-						GetPeakValue[nPeakValue].prefix[i] = toupper(GetPeakValue[nPeakValue].prefix[i]);
-				}
-				if ( (str = k_str()) ) {
-					if ( GetModId(str, &GetPeakValue[nPeakValue].srcmod) != 0 ) {
-						logit("e", "shake2redis: Invalid source module name <%s>", str);
-						logit("e", " in <GetPeakValueType> cmd; exiting!\n");
-						exit(-1);
+			/* Parse the index of SetPeakValue first */
+				i = k_int();
+				if ( i >= 0 && i < MAX_TYPE_PEAKVALUE ) {
+					if ( (str = k_str()) ) {
+						SetPeakValue[i].rectype = typestr2num( str );
+						logit(
+							"o", "shake2redis: No.%d Peak value type set to %s:%d ",
+							i, str, SetPeakValue[i].rectype
+						);
 					}
+					if ( (str = k_str()) ) {
+						strcpy(SetPeakValue[i].prefix, str);
+						logit("o", "and the setting prefix is %s\n", SetPeakValue[i].prefix);
+					}
+				/* */
+					SetPeakValue[i].nrelated = 0;
+					nPeakValue++;
+					init[7] = 1;
 				}
-				GetPeakValue[nPeakValue].nrelated = 0;
-				nPeakValue++;
-				init[7] = 1;
+				else {
+					logit("e", "shake2redis: Error when parsing index of <SetPeakValueType> ");
+					logit("e", "; setting number might too large, max=%d; exiting!\n", (int)MAX_TYPE_PEAKVALUE);
+					exit(-1);
+				}
 			}
 		/* 8 */
+			else if ( scnlfilter_com( "shake2redis" ) ) {
+			/* */
+				for ( str = k_com(), i = 0; *str == ' ' && i < (int)strlen(str); str++, i++ );
+				if ( strncmp(str, "Block_SCNL", 10) ) {
+				/* Maybe we need much more checking for this command */
+					if ( scnlfilter_extra_com( proc_com_sv_index ) < 0 ) {
+						logit("o", "shake2redis: No set value index define in command: \"%s\" ", k_com());
+						logit("o", ", first index(0) will be filled!\n");
+					/* Reset the error code for this command */
+						k_err();
+					}
+					init[8] = 1;
+				}
+			}
+		/* 9 */
 			else if ( k_its("GenIntensityType") ) {
 				if ( (nIntensity + 1) >= MAX_TYPE_INTENSITY ) {
 					logit("e", "shake2redis: Too many <GenIntensityType> commands in <%s>", configfile);
@@ -504,31 +541,13 @@ static void shake2redis_config( char *configfile )
 					);
 				}
 			/* Processing of input message list */
-				int _inputmsg = k_long();
-				if ( _inputmsg > ((1 << MAX_TYPE_PEAKVALUE) - 1) || _inputmsg < 1 ) {
-					logit("e", "shake2redis: Excessive value of input messages(range is 1~255). Exiting!\n");
+				if ( (i = proc_com_input_pv( k_int(), nIntensity )) < 0 ) {
+					logit("e", "shake2redis: ERROR when parsing input peak value of <%s> command; exiting!\n", com);
 					exit(-1);
 				}
-				int _pvcount = 0;
-				memset(GenIntensity[nIntensity].pvindex, 0, sizeof(uint8_t) * MAX_TYPE_PEAKVALUE);
-				for ( i = 0; i < MAX_TYPE_PEAKVALUE; i++, _inputmsg >>= 1 ) {
-					if ( _inputmsg & 0x01 ) {
-						GenIntensity[nIntensity].pvindex[_pvcount++] = i;
-						GetPeakValue[i].related_int[GetPeakValue[i].nrelated] = nIntensity;
-						GetPeakValue[i].nrelated++;
-					}
-				}
-				if ( _pvcount != shake_get_reqinputs(GenIntensity[nIntensity].inttype) ) {
-					logit(
-						"e", "shake2redis: The number of inputs is not correct(it should be %d for %s). Exiting!\n",
-						shake_get_reqinputs( GenIntensity[nIntensity].inttype ),
-						shakenum2str( GenIntensity[nIntensity].inttype )
-					);
-					exit(-1);
-				}
-				GenIntensity[nIntensity].npvalue = _pvcount;
+				GenIntensity[nIntensity].npvalue = i;
 				nIntensity++;
-				init[8] = 1;
+				init[9] = 1;
 			}
 		 /* Unknown command*/
 			else {
@@ -537,9 +556,9 @@ static void shake2redis_config( char *configfile )
 			}
 
 		/* See if there were any errors processing the command */
-			if( k_err() ) {
-			   logit("e", "shake2redis: Bad <%s> command in <%s>; exiting!\n", com, configfile);
-			   exit(-1);
+			if ( k_err() ) {
+				logit("e", "shake2redis: Bad <%s> command in <%s>; exiting!\n", com, configfile);
+				exit(-1);
 			}
 		}
 		nfiles = k_close();
@@ -559,8 +578,9 @@ static void shake2redis_config( char *configfile )
 		if ( !init[4] ) logit("e", "<RedisHost> "            );
 		if ( !init[5] ) logit("e", "<QueueSize> "            );
 		if ( !init[6] ) logit("e", "any <GetEventsFrom> "    );
-		if ( !init[7] ) logit("e", "any <GetPeakValueType> " );
-		if ( !init[8] ) logit("e", "any <GenIntensityType> " );
+		if ( !init[7] ) logit("e", "any <SetPeakValueType> " );
+		if ( !init[8] ) logit("e", "any <Allow_SCNL*> "      );
+		if ( !init[9] ) logit("e", "any <GenIntensityType> " );
 
 		logit("e", "command(s) in <%s>; exiting!\n", configfile);
 		exit(-1);
@@ -749,17 +769,11 @@ static thr_ret shake2redis_output_thread( void *dummy )
 		}
 	/* */
 		if ( i >= rdrec_num ) {
-			if ( rdrec_empty ) {
+			if ( rdrec_empty )
 				rdrec_ptr = rdrec_empty;
-			}
-			else {
-				logit(
-					"et", "shake2redis: Redis records buffer is full, one-shot this record(%s %s)!\n",
-					shakerec.table, shakerec.field
-				);
+			else
 			/* Since the buffer is already full, we use the oneshot buffer for immediately output */
 				rdrec_ptr = &rdrec_oneshot;
-			}
 		/* Fill the table name */
 			append_str2rdrec( rdrec_ptr, shakerec.table );
 		}
@@ -892,24 +906,6 @@ static char *terminate_rdrec( REDIS_RECORDS *rdrec )
 /*
  *
  */
-static int get_i_peak_value( const int rectype_in, const int srcmod_in )
-{
-	int i;
-
-	for ( i = 0; i < nPeakValue; i++ ) {
-		if ( rectype_in == GetPeakValue[i].rectype ) {
-			if ( GetPeakValue[i].srcmod == WILD || srcmod_in == GetPeakValue[i].srcmod ) {
-				return i;
-			}
-		}
-	}
-
-	return -1;
-}
-
-/*
- *
- */
 static int is_single_pvalue_sync( const STATION_PEAK *stapeak, const int pvalue_i )
 {
 	DL_NODE   *current = NULL;
@@ -980,7 +976,7 @@ static double update_single_pvalue( STATION_PEAK *stapeak, const int pvalue_i )
 	stapeak->ptime[pvalue_i]  = _ptime;
 /* */
 	enrich_shake_record(
-		&shakerec, stapeak->sta, stapeak->net, stapeak->loc, GetPeakValue[pvalue_i].prefix, _ptime, _pvalue
+		&shakerec, stapeak->sta, stapeak->net, stapeak->loc, SetPeakValue[pvalue_i].prefix, _ptime, _pvalue
 	);
 	sk2rd_msgqueue_enqueue( &shakerec, sizeof(SHAKE_RECORD), (MSG_LOGO){ 0 } );
 
@@ -1000,9 +996,9 @@ static void update_related_intensities( STATION_PEAK *stapeak, const int pvalue_
 	//SHAKE_RECORD shakerec;
 
 /* */
-	for ( i = 0; i < GetPeakValue[pvalue_i].nrelated; i++ ) {
+	for ( i = 0; i < SetPeakValue[pvalue_i].nrelated; i++ ) {
 	/* */
-		_intensity_i = GetPeakValue[pvalue_i].related_int[i];
+		_intensity_i = SetPeakValue[pvalue_i].related_int[i];
 		if ( is_needed_pvalues_sync( stapeak, _intensity_i ) ) {
 			_npvalue = GenIntensity[_intensity_i].npvalue;
 			for ( j = 0; j < _npvalue; j++ )
@@ -1064,4 +1060,52 @@ static double get_precise_timenow( void )
 	clock_gettime(CLOCK_REALTIME_COARSE, &time_sp);
 
 	return (double)time_sp.tv_sec + (double)time_sp.tv_nsec * 1.0e-9;
+}
+
+/*
+ *
+ */
+static void *proc_com_sv_index( const char *command )
+{
+	int *result = (int *)calloc(1, sizeof(int));
+
+/* */
+	*result = atoi(command);
+
+	return result;
+}
+
+/*
+ *
+ */
+static int proc_com_input_pv( int inputpv, const int gen_index )
+{
+	int i;
+	int pvcount = 0;
+
+/* Processing of input message list */
+	if ( inputpv > ((1 << MAX_TYPE_PEAKVALUE) - 1) || inputpv < 1 ) {
+		logit("e", "shake2redis: ERROR! Excessive value of input messages(range is 1~255).\n");
+		return -1;
+	}
+/* */
+	memset(GenIntensity[gen_index].pvindex, 0, sizeof(uint8_t) * MAX_TYPE_PEAKVALUE);
+	for ( i = 0; i < MAX_TYPE_PEAKVALUE; i++, inputpv >>= 1 ) {
+		if ( inputpv & 0x01 ) {
+			GenIntensity[gen_index].pvindex[pvcount++] = i;
+			SetPeakValue[i].related_int[SetPeakValue[i].nrelated] = gen_index;
+			SetPeakValue[i].nrelated++;
+		}
+	}
+/* */
+	if ( pvcount != shake_get_reqinputs( GenIntensity[gen_index].inttype ) ) {
+		logit(
+			"e", "shake2redis: ERROR! The number of inputs is not correct(it should be %d for %s).\n",
+			shake_get_reqinputs( GenIntensity[gen_index].inttype ),
+			shakenum2str( GenIntensity[gen_index].inttype )
+		);
+		return -1;
+	}
+
+	return pvcount;
 }

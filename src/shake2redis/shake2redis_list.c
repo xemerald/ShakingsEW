@@ -23,6 +23,7 @@ typedef struct {
 static StaList      *create_sta_list( void );
 static void          destroy_sta_list( StaList * );
 static int           compare_snl( const void *, const void * ); /* The compare function of binary tree search */
+static int           compare_chan( const void *, const void * );
 static STATION_PEAK *enrich_stapeak( STATION_PEAK *, const char *, const char *, const char * );
 static void          free_stapeak( void * );
 static void          dummy_func( void * );
@@ -131,43 +132,50 @@ void sk2rd_list_walk( void (*action)(const void *, const int, void *), void *arg
 /*
  *
  */
-CHAN_PEAK *sk2rd_list_chlist_search( const STATION_PEAK *stapeak, const int pvalue_i, const char *chan )
+CHAN_PEAK *sk2rd_list_chlist_search( STATION_PEAK *stapeak, const char *chan, const int pvalue_i )
 {
 	CHAN_PEAK *result  = NULL;
-	DL_NODE   *current = NULL;
 
 /* Test if already in the list */
-	if ( (result = sk2rd_list_chlist_find( stapeak, pvalue_i, chan )) == NULL ) {
+	if ( (result = sk2rd_list_chlist_find( stapeak, chan )) == NULL ) {
 		result = (CHAN_PEAK *)calloc(1, sizeof(CHAN_PEAK));
 		memcpy(result->chan, chan, TRACE2_CHAN_LEN);
+		result->match = NULL;
 	/* */
-		current = dl_node_append( (DL_NODE **)&stapeak->chlist[pvalue_i], result );
-		if ( current == NULL ) {
-			free(result);
-			result = NULL;
+		if ( dl_node_append( (DL_NODE **)&stapeak->chlist[pvalue_i], result ) == NULL ) {
+			logit("e", "shake2redis: Error insert channel into linked list!\n");
+			goto except;
+		}
+		if ( tsearch(result, &stapeak->chlist_root, compare_chan) == NULL ) {
+			logit("e", "shake2redis: Error insert channel into binary tree!\n");
+			goto except;
 		}
 	}
 
 	return result;
+
+except:
+	free(result);
+	return NULL;
 }
 
 /*
  *
  */
-CHAN_PEAK *sk2rd_list_chlist_find( const STATION_PEAK *stapeak, const int pvalue_i, const char *chan )
+CHAN_PEAK *sk2rd_list_chlist_find( const STATION_PEAK *stapeak, const char *chan )
 {
+	CHAN_PEAK  key;
 	CHAN_PEAK *result  = NULL;
-	DL_NODE   *current = (DL_NODE *)stapeak->chlist[pvalue_i];
 
-	for ( ; current != NULL; current = DL_NODE_GET_NEXT( current ) ) {
-		result = (CHAN_PEAK *)DL_NODE_GET_DATA( current );
-		if ( !strcmp(result->chan, chan) )
-			break;
-		else
-			result = NULL;
+/* */
+	memcpy(key.chan, chan, TRACE2_CHAN_LEN);
+/* Find which trace */
+	if ( (result = tfind(&key, &stapeak->chlist_root, compare_chan)) == NULL ) {
+	/* Not found in trace table */
+		return NULL;
 	}
 
-	return result;
+	return *(CHAN_PEAK **)result;
 }
 
 /*
@@ -242,6 +250,17 @@ static int compare_snl( const void *a, const void *b )
 }
 
 /*
+ * compare_chan() - The channel code compare function of binary tree search
+ */
+static int compare_chan( const void *a, const void *b )
+{
+	CHAN_PEAK *tmpa = (CHAN_PEAK *)a;
+	CHAN_PEAK *tmpb = (CHAN_PEAK *)b;
+
+	return strcmp( tmpa->chan, tmpb->chan );
+}
+
+/*
  *
  */
 static STATION_PEAK *enrich_stapeak( STATION_PEAK *stapeak, const char *sta, const char *net, const char *loc )
@@ -251,6 +270,8 @@ static STATION_PEAK *enrich_stapeak( STATION_PEAK *stapeak, const char *sta, con
 	memcpy(stapeak->sta, sta, TRACE2_STA_LEN);
 	memcpy(stapeak->net, net, TRACE2_NET_LEN);
 	memcpy(stapeak->loc, loc, TRACE2_LOC_LEN);
+/* */
+	stapeak->chlist_root = NULL;
 	for ( i = 0; i < MAX_TYPE_PEAKVALUE; i++ ) {
 		stapeak->chlist[i] = NULL;
 		stapeak->pvalue[i] = NULL_PEAKVALUE;
@@ -267,6 +288,7 @@ static void free_stapeak( void *node )
 	int           i;
 	STATION_PEAK *stapeak = (STATION_PEAK *)node;
 
+	tdestroy(stapeak->chlist_root, dummy_func);
 	for ( i = 0; i < MAX_TYPE_PEAKVALUE; i++ )
 		dl_list_destroy( (DL_NODE **)&stapeak->chlist[i], free );
 

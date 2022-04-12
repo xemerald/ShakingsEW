@@ -341,11 +341,11 @@ static void peak2trig_config( char *configfile )
 	char *com;
 	char *str;
 
-	uint32_t ncommand;     /* # of required commands you expect to process   */
-	uint32_t nmiss;        /* number of required commands that were missed   */
-	uint32_t nfiles;
-	uint32_t success;
-	uint32_t i;
+	int ncommand;     /* # of required commands you expect to process   */
+	int nmiss;        /* number of required commands that were missed   */
+	int nfiles;
+	int success;
+	int i;
 
 /* Set to zero one init flag for each required command */
 	ncommand = 13;
