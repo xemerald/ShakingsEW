@@ -496,6 +496,8 @@ static void trace2peak_config( char *configfile )
 					if ( scnlfilter_extra_com( proc_com_pv_type ) < 0 ) {
 						logit("o", "trace2peak: No peak value type define in command: %s ", k_com());
 						logit("o", ", %d(%s) will be filled!\n", DEF_PEAK_VALUE_TYPE, typenum2str(DEF_PEAK_VALUE_TYPE));
+					/* Reset the error code for this command */
+						k_err();
 					}
 				}
 			}
