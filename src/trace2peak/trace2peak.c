@@ -490,10 +490,10 @@ static void trace2peak_config( char *configfile )
 			else if ( scnlfilter_com( "trace2peak" ) ) {
 			/* */
 				SCNLFilterSwitch = 1;
-				if ( scnlfilter_extra_com( proc_com_pv_type ) < 0 ) {
+				for ( str = k_com(), i = 0; *str == ' ' && i < strlen(str); str++, i++ );
+				if ( strncmp(str, "Block_SCNL", 10) ) {
 				/* Maybe we need much more checking for this command */
-					for ( str = k_com(), i = 0; *str == ' ' && i < strlen(str); str++, i++ );
-					if ( strncmp(str, "Block_SCNL", 10) ) {
+					if ( scnlfilter_extra_com( proc_com_pv_type ) < 0 ) {
 						logit("o", "trace2peak: No peak value type define in command: %s ", k_com());
 						logit("o", ", %d(%s) will be filled!\n", DEF_PEAK_VALUE_TYPE, typenum2str(DEF_PEAK_VALUE_TYPE));
 					}
