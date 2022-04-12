@@ -15,6 +15,10 @@ HeartBeatInterval  15             # seconds between heartbeats
 #
 DriftCorrectThreshold   30        # seconds waiting for D.C.
 
+# List the message logos to grab from transport ring
+#              Installation       Module          Message Types
+GetEventsFrom  INST_WILDCARD      MOD_WILDCARD    TYPE_TRACEBUF2
+
 # List of station/channel/network/loc codes to process and its value type (Optional):
 #
 # Use any combination of Allow_SCNL (to process data as-is) and
@@ -39,8 +43,3 @@ DriftCorrectThreshold   30        # seconds waiting for D.C.
                                                                           # and they are all vel. value
 #Allow_SCNL_Remap JGR VHZ NC --    *   EHZ * *           vel              # Change component code only
 #Allow_SCNL_Remap CAL *   NC *     ALM *   * *           dis              # Allow all component of CAL, but change the site code to ALM
-
-
-# List the message logos to grab from transport ring
-#              Installation       Module          Message Types
-GetEventsFrom  INST_WILDCARD      MOD_WILDCARD    TYPE_TRACEBUF2

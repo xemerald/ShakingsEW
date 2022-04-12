@@ -25,6 +25,10 @@ NaturalPeriod      0.3
 #
 DriftCorrectThreshold   30        # seconds waiting for D.C.
 
+# List the message logos to grab from transport ring
+#              Installation       Module          Message Types
+GetEventsFrom  INST_WILDCARD      MOD_WILDCARD    TYPE_TRACEBUF2
+
 # List of station/channel/network/loc codes to process (Optional):
 #
 # Use any combination of Allow_SCNL (to process data as-is) and
@@ -47,7 +51,3 @@ DriftCorrectThreshold   30        # seconds waiting for D.C.
 #Allow_SCNL       JPS *   NC *                    # Allow all components of JPS NC
 #Allow_SCNL_Remap JGR VHZ NC --    *   EHZ * *    # Change component code only
 #Allow_SCNL_Remap CAL *   NC *     ALM *   * *    # Allow all component of CAL, but change the site code to ALM
-
-# List the message logos to grab from transport ring
-#              Installation       Module          Message Types
-GetEventsFrom  INST_WILDCARD      MOD_WILDCARD    TYPE_TRACEBUF2

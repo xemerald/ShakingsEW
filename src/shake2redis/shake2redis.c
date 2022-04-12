@@ -220,6 +220,8 @@ int main ( int argc, char **argv )
 				shake2redis_end();
 				exit(-1);
 			}
+		/* Just wait for the connection finish */
+			sleep_ew(1000);
 			OutputThreadStatus = THREAD_ALIVE;
 		}
 
@@ -671,6 +673,7 @@ static thr_ret shake2redis_output_thread( void *dummy )
 /* */
 	int            rdrec_num = MAX_TYPE_PEAKVALUE * LATENCY_THRESHOLD;
 	REDIS_RECORDS  rdrec_pv[rdrec_num];
+	REDIS_RECORDS  rdrec_oneshot;
 	REDIS_RECORDS *rdrec_ptr   = NULL;
 	REDIS_RECORDS *rdrec_empty = NULL;
 /* */
@@ -696,8 +699,9 @@ static thr_ret shake2redis_output_thread( void *dummy )
 /* */
 	for ( i = 0; i < rdrec_num; i++ ) {
 		rdrec_ptr = rdrec_pv + i;
-		INIT_REDIS_RECORDS(rdrec_ptr);
+		INIT_REDIS_RECORDS( rdrec_ptr );
 	}
+	INIT_REDIS_RECORDS( &rdrec_oneshot );
 
 /* Processing loop */
 	do {
@@ -723,7 +727,8 @@ static thr_ret shake2redis_output_thread( void *dummy )
 				timelastcheck = (time_t)timenow;
 				sk2rd_list_walk( check_station_latency, &timelastcheck );
 			}
-			sleep_ew(50);
+		/* Wait for next message */
+			sleep_ew(10);
 			continue;
 		}
 
@@ -743,20 +748,21 @@ static thr_ret shake2redis_output_thread( void *dummy )
 		if ( i >= rdrec_num ) {
 			if ( rdrec_empty ) {
 				rdrec_ptr = rdrec_empty;
-			/* Fill the table name */
-				append_str2rdrec( rdrec_ptr, shakerec.table );
 			}
 			else {
 				logit(
-					"et", "shake2redis: Redis records buffer is full, skip this record(%s %s)!\n",
+					"et", "shake2redis: Redis records buffer is full, one-shot this record(%s %s)!\n",
 					shakerec.table, shakerec.field
 				);
-				continue;
+			/* Since the buffer is already full, we use the oneshot buffer for temporary quick output */
+				rdrec_ptr = &rdrec_oneshot;
 			}
+		/* Fill the table name */
+			append_str2rdrec( rdrec_ptr, shakerec.table );
 		}
 	/* */
 		MARK_TIMESTAMP_REDISREC( rdrec_ptr );
-		if ( append_shakerec2rdrec( rdrec_ptr, &shakerec ) >= max_rec ) {
+		if ( append_shakerec2rdrec( rdrec_ptr, &shakerec ) >= max_rec || rdrec_ptr == &rdrec_oneshot ) {
 			if ( output_hashtable_rdrec( redis, rdrec_ptr ) )
 				goto disconnect;
 			INIT_REDIS_RECORDS( rdrec_ptr );
