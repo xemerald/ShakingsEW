@@ -67,11 +67,11 @@ typedef struct {
 static int          filter_wildcards( const SCNL_Filter *, const SCNL_Filter * );
 static int          remap_tracebuf_scnl( const SCNL_Filter *, TRACE_HEADER * );
 static int          remap_tracebuf2_scnl( const SCNL_Filter *, TRACE2_HEADER * );
-static double       get_wavetime( TRACE2_HEADER * );
-static char        *copytrim( char *, char *, int );
+static double       get_wavetime( const TRACE2_HEADER * );
+static char        *copytrim( char *, const char *, const int );
 static SCNL_Filter *realloc_scnlf_list( const char * );
 static void         swap_double( double * );
-static int          compare_scnl( const void *s1, const void *s2 );  /* qsort & bsearch */
+static int          compare_scnl( const void *, const void * );  /* qsort & bsearch */
 
 /* Globals for site-comp-net-loc filter */
 static SCNL_Filter *Lists = NULL;       /* list of SCNL's to accept & rename   */
@@ -281,7 +281,7 @@ int scnlfilter_init( const char *prog )
 	else {
 		logit(
 			"o", "%s: wildcards present in requested channel list;"
-			" must use linear search for SCNL matching.\n", prog
+			" will use linear search for SCNL matching.\n", prog
 		);
 	}
 
@@ -320,38 +320,20 @@ int scnlfilter_init( const char *prog )
  *
  *   20020319 dbh Changed the return code handling
  */
-int scnlfilter_apply( void *inmsg, size_t inlen, unsigned char intype, const void **outmatch )
+int scnlfilter_apply( const char *sta, const char *chan, const char *net, const char *loc, const void **outmatch )
 {
-	int            i;
-	TRACE_HEADER  *thd;
-	TRACE2_HEADER *thd2;
-	SCNL_Filter    key;          /* Key for binary search       */
-	SCNL_Filter   *match;        /* Pointer into Lists-list      */
-	SCNL_Filter   *current;
-
+	int          i;
+	SCNL_Filter  key;          /* Key for binary search       */
+	SCNL_Filter *match;        /* Pointer into Lists-list      */
+	SCNL_Filter *current;
 /* */
 	if ( !FilterInit )
 		scnlfilter_init( "scnlfilter_apply" );
-/* Read SCNL of a TYPE_TRACEBUF2 or TYPE_TRACE2_COMP_UA message */
-	if ( intype == TypeTraceBuf2 ) {
-		thd2 = (TRACE2_HEADER *)inmsg;
-		copytrim( key.sta,  thd2->sta,  STA_STRLEN  );
-		copytrim( key.chan, thd2->chan, CHAN_STRLEN );
-		copytrim( key.net,  thd2->net,  NET_STRLEN  );
-		copytrim( key.loc,  thd2->loc,  LOC_STRLEN  );
-	}
-/* Read SCN of a TYPE_TRACEBUF or TYPE_TRACE_COMP_UA message */
-	else if ( intype == TypeTraceBuf ) {
-		thd = (TRACE_HEADER *)inmsg;
-		copytrim( key.sta,  thd->sta,        STA_STRLEN  );
-		copytrim( key.chan, thd->chan,       CHAN_STRLEN );
-		copytrim( key.net,  thd->net,        NET_STRLEN  );
-		copytrim( key.loc,  LOC_NULL_STRING, LOC_STRLEN  );
-	}
-/* Or else we don't know how to read this type of message */
-	else {
-		return 0;
-	}
+/* Read SCNL from input arguments */
+	copytrim( key.sta,  sta ? sta : WILDCARD_STR,    STA_STRLEN  );
+	copytrim( key.chan, chan ? chan : WILDCARD_STR,  CHAN_STRLEN );
+	copytrim( key.net,  net ? net : WILDCARD_STR,    NET_STRLEN  );
+	copytrim( key.loc,  loc ? loc : LOC_NULL_STRING, LOC_STRLEN  );
 
 /* Look for the message's SCNL in the Lists-list. */
 	match = NULL;
@@ -404,7 +386,23 @@ int scnlfilter_apply( void *inmsg, size_t inlen, unsigned char intype, const voi
 /*
  *
  */
-int scnlfilter_trace_remap( void *inmsg, unsigned char intype, const void *match )
+int scnlfilter_trace_apply( const void *inmsg, const unsigned char intype, const void **outmatch )
+{
+	const TRACE2_HEADER *trh2 = (const TRACE2_HEADER *)inmsg;
+	const TRACE_HEADER  *trh  = (const TRACE_HEADER *)inmsg;
+
+	if ( intype == TypeTraceBuf2 )
+		return scnlfilter_apply( trh2->sta, trh2->chan, trh2->net, trh2->loc, outmatch );
+	else if ( intype == TypeTraceBuf )
+		return scnlfilter_apply( trh->sta, trh->chan, trh->net, NULL, outmatch );
+	else
+		return 0;
+}
+
+/*
+ *
+ */
+int scnlfilter_trace_remap( void *inmsg, const unsigned char intype, const void *match )
 {
 	const SCNL_Filter *_match = (const SCNL_Filter *)match;
 
@@ -437,7 +435,7 @@ void *scnlfilter_extra_get( const void *match )
 /*
  * scnlfilter_logmsg() - simple logging of message
  */
-void scnlfilter_logmsg( char *msg, int msglen, unsigned char msgtype, char *note )
+void scnlfilter_logmsg( char *msg, const int msglen, const unsigned char msgtype, const char *note )
 {
 	TRACE2_HEADER *thd2 = (TRACE2_HEADER *)msg;
 	char           tmpstr[128];
@@ -594,40 +592,40 @@ static int remap_tracebuf2_scnl( const SCNL_Filter *filter, TRACE2_HEADER *trh2 
  * copytrim() - copies n bytes from one string to another,
  *              trimming off any leading and trailing blank spaces
  */
-static char *copytrim( char *str2, char *str1, int n )
+static char *copytrim( char *dest, const char *src, const int n )
 {
 	int i, len;
 
 /* DEBUG */
-/* printf( "copy %3d bytes of str1: \"%s\"\n", n, str1 ); */
+/* printf( "copy %3d bytes of src: \"%s\"\n", n, src ); */
 
-/* find first non-blank char in str1 (trim off leading blanks) */
+/* find first non-blank char in src (trim off leading blanks) */
 	for ( i = 0; i < n; i++ )
-		if ( str1[i] != ' ' )
+		if ( src[i] != ' ' )
 			break;
-/* copy the remaining number of bytes to str2 */
+/* copy the remaining number of bytes to dest */
 	len = n - i;
-	memcpy( str2, str1 + i, len );
-	str2[len] = '\0';
+	memcpy( dest, src + i, len );
+	dest[len] = '\0';
 /* DEBUG */
-/* printf( "  leading-trimmed str2: \"%s\"\n", str2 ); */
+/* printf( "  leading-trimmed dest: \"%s\"\n", dest ); */
 
-/* find last non-blank char in str2 (trim off trailing blanks) */
+/* find last non-blank char in dest (trim off trailing blanks) */
 	for ( i = len - 1; i >= 0; i-- )
-		if ( str2[i] != ' ' )
+		if ( dest[i] != ' ' )
 			break;
-	str2[i + 1] = '\0';
+	dest[i + 1] = '\0';
 /* DEBUG */
-/* printf( " trailing-trimmed str2: \"%s\"\n\n", str2 ); */
+/* printf( " trailing-trimmed dest: \"%s\"\n\n", dest ); */
 
-	return str2;
+	return dest;
 }
 
 /*
  *  get_wavetime() - Return value of starttime from a tracebuf header
  *                   Returns -1. if unknown data type,
  */
-static double get_wavetime( TRACE2_HEADER* wvmsg )
+static double get_wavetime( const TRACE2_HEADER* wvmsg )
 {
 	char   byte_order;
 	char   data_size;

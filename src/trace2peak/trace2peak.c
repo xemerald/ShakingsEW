@@ -216,7 +216,7 @@ int main ( int argc, char **argv )
 				if (
 					SCNLFilterSwitch &&
 					!(traceptr = tra2peak_list_find( &tracebuffer.trh2x )) &&
-					!scnlfilter_apply( tracebuffer.msg, recsize, reclogo.type, &_match )
+					!scnlfilter_trace_apply( tracebuffer.msg, reclogo.type, &_match )
 				) {
 				/* Debug */
 					//printf("trace2peak: Found SCNL %s.%s.%s.%s but not in the filter, drop it!\n",
@@ -494,7 +494,7 @@ static void trace2peak_config( char *configfile )
 				if ( strncmp(str, "Block_SCNL", 10) ) {
 				/* Maybe we need much more checking for this command */
 					if ( scnlfilter_extra_com( proc_com_pv_type ) < 0 ) {
-						logit("o", "trace2peak: No peak value type define in command: %s ", k_com());
+						logit("o", "trace2peak: No peak value type define in command: \"%s\" ", k_com());
 						logit("o", ", %d(%s) will be filled!\n", DEF_PEAK_VALUE_TYPE, typenum2str(DEF_PEAK_VALUE_TYPE));
 					/* Reset the error code for this command */
 						k_err();

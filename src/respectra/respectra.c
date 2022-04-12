@@ -233,7 +233,7 @@ int main ( int argc, char **argv )
 				if (
 					SCNLFilterSwitch &&
 					!(traceptr = rsp_list_find( &tracebuffer.trh2x )) &&
-					!scnlfilter_apply( tracebuffer.msg, recsize, reclogo.type, &_match )
+					!scnlfilter_trace_apply( tracebuffer.msg, reclogo.type, &_match )
 				) {
 				/* Debug */
 					//printf("respectra: Found SCNL %s.%s.%s.%s but not in the filter, drop it!\n",
