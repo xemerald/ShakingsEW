@@ -33,8 +33,10 @@ DriftCorrectThreshold   30        # seconds waiting for D.C.
 #
 #                 Origin SCNL      Map to SCNL      Peak value type
 #Block_SCNL       BOZ LHZ US *                                            # Block this specific channel
-#Allow_SCNL       JMP ASZ NC 01                          acc              # Allow this specific channel and it is acc. value
-#Allow_SCNL       JPS *   NC *                           vel              # Allow all components of JPS NC and they are all vel. value
+#Allow_SCNL       JMP ASZ NC 01                          acc              # Allow this specific channel
+                                                                          # and it is acc. value
+#Allow_SCNL       JPS *   NC *                           vel              # Allow all components of JPS NC
+                                                                          # and they are all vel. value
 #Allow_SCNL_Remap JGR VHZ NC --    *   EHZ * *           vel              # Change component code only
 #Allow_SCNL_Remap CAL *   NC *     ALM *   * *           dis              # Allow all component of CAL, but change the site code to ALM
 

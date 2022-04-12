@@ -373,7 +373,7 @@ exit_procedure:
  */
 static void trace2peak_config( char *configfile )
 {
-	char  init[8];     /* init flags, one byte for each required command */
+	char  init[7];     /* init flags, one byte for each required command */
 	char *com;
 	char *str;
 
@@ -384,7 +384,7 @@ static void trace2peak_config( char *configfile )
 	uint32_t i;
 
 /* Set to zero one init flag for each required command */
-	ncommand = 8;
+	ncommand = 7;
 	for ( i = 0; i < ncommand; i++ )
 		init[i] = 0;
 /* Open the main configuration file */
@@ -529,7 +529,6 @@ static void trace2peak_config( char *configfile )
 		if ( !init[4] ) logit("e", "<HeartBeatInterval> "    );
 		if ( !init[5] ) logit("e", "<DriftCorrectThreshold> ");
 		if ( !init[6] ) logit("e", "any <GetEventsFrom> "    );
-		if ( !init[7] ) logit("e", "any SCNL filter "    );
 
 		logit("e", "command(s) in <%s>; exiting!\n", configfile);
 		exit(-1);
