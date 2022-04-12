@@ -238,7 +238,6 @@ int main ( int argc, char **argv )
 				}
 			/* Initialize for in-list checking */
 				traceptr = NULL;
-				_match   = NULL;
 			/* If this trace is already inside the local list, it would skip the SCNL filter */
 				if (
 					SCNLFilterSwitch &&

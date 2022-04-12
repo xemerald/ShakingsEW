@@ -212,8 +212,6 @@ int main ( int argc, char **argv )
 				}
 			/* Initialize for in-list checking */
 				traceptr = NULL;
-				_match   = NULL;
-				_extra   = NULL;
 			/* If this trace is already inside the local list, it would skip the SCNL filter */
 				if (
 					SCNLFilterSwitch &&
@@ -264,6 +262,9 @@ int main ( int argc, char **argv )
 					}
 				/* Fetch the extra argument */
 					_extra = scnlfilter_extra_get( traceptr->match );
+				}
+				else {
+					_extra = NULL;
 				}
 
 			/* Start processing the gap in trace */
