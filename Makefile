@@ -25,47 +25,47 @@ unix_v710: unix_libs unix_modules_v710
 ###############################
 
 unix_libs: MAKING_C_LIBRARIES_MESSAGE
-	@cd libsrc && \
+	@cd src/libsrc && \
 		$(MAKE) -f makefile.unix
 
 unix_modules: MAKING_MODULES_MESSAGE
 	@for x in $(MODULES) ; \
 	do \
-		cd $$x && \
+		cd src/$$x && \
 			echo ---------- ; \
 			echo Making $@ in: `pwd` ; \
 			$(MAKE) -f makefile.unix || exit "$$?" ; \
-			cd .. ; \
+			cd - ; \
 	done
 
 unix_modules_v710: MAKING_MODULES_MESSAGE
 	@for x in $(MODULES) ; \
 	do \
-		cd $$x && \
+		cd src/$$x && \
 			echo ---------- ; \
 			echo Making $@ in: `pwd` ; \
 			$(MAKE) -f makefile.unix ver_710 || exit "$$?" ; \
-			cd .. ; \
+			cd - ; \
 	done
 
 clean_unix: PHONY
-	-@cd libsrc && \
+	-@cd src/libsrc && \
 		echo Cleaning in: `pwd` ; \
 		$(MAKE) -f makefile.unix clean_obj
 	-@for x in $(MODULES) ; \
 	do ( \
-		cd $$x && \
+		cd src/$$x && \
 			echo Cleaning in: `pwd` ; \
 			$(MAKE) -f makefile.unix clean \
 	) ; done
 
 clean_bin_unix: PHONY
-	-@cd libsrc && \
+	-@cd src/libsrc && \
 		echo Cleaning libraries in: `pwd` ; \
 		$(MAKE) -f makefile.unix clean_lib
 	-@for x in $(MODULES) ; \
 	do ( \
-		cd $$x && \
+		cd src/$$x && \
 			echo Cleaning binaries in: `pwd` ; \
 			$(MAKE) -f makefile.unix clean_bin \
 	) ; done
