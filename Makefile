@@ -5,6 +5,7 @@ MODULES = \
 	postshake \
 	respectra \
 	shakemap \
+	shake2redis \
 	shake2ws \
 	trace2peak
 
