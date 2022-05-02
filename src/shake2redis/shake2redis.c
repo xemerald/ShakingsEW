@@ -723,7 +723,7 @@ static thr_ret shake2redis_output_thread( void *dummy )
 	}
 	else {
 		logit("e", "shake2redis: Cannot allocate the memory for Redis buffer, exiting!\n");
-		exit(-1);
+		goto disconnect;
 	}
 
 /* Processing loop */
@@ -786,6 +786,9 @@ static thr_ret shake2redis_output_thread( void *dummy )
 /* */
 disconnect:
 	redisFree(redis);
+/* */
+	if ( rdrec_main )
+		free(rdrec_main);
 /* File a complaint to the main thread */
 	if ( Finish )
 		OutputThreadStatus = THREAD_ERR;
