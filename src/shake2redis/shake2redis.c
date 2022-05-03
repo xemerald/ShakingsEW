@@ -115,7 +115,6 @@ static struct {
 } GenIntensity[MAX_TYPE_INTENSITY];
 /* */
 static struct {
-	int     count;      /* Number of elements in the list */
 	mutex_t mutex;      /* */
 	void   *entry;      /* */
 } DelayShakeRecList;
@@ -738,7 +737,6 @@ static thr_ret shake2redis_output_thread( void *dummy )
 		goto disconnect;
 	}
 /* Initialization for the delay list */
-	DelayShakeRecList.count = 0;
 	CreateSpecificMutex(&DelayShakeRecList.mutex);
 	DelayShakeRecList.entry = NULL;
 
@@ -799,7 +797,6 @@ static thr_ret shake2redis_output_thread( void *dummy )
 					if ( dl_node_append( (DL_NODE **)&DelayShakeRecList.entry, _shakerec ) == NULL ) {
 						logit("e", "shake2redis: Error insert a shake record into delay linked list!\n");
 					}
-					DelayShakeRecList.count++;
 					ReleaseSpecificMutex(&DelayShakeRecList.mutex);
 				}
 				continue;
@@ -872,10 +869,7 @@ static thr_ret shake2redis_oneshot_thread( void *dummy )
 		shakerec = NULL;
 	/* */
 		RequestSpecificMutex(&DelayShakeRecList.mutex);
-		if ( DelayShakeRecList.count ) {
-			node = dl_node_pop( (DL_NODE **)&DelayShakeRecList.entry );
-			DelayShakeRecList.count--;
-		}
+		node = dl_node_pop( (DL_NODE **)&DelayShakeRecList.entry );
 		ReleaseSpecificMutex(&DelayShakeRecList.mutex);
 
 	/* */
@@ -892,9 +886,13 @@ static thr_ret shake2redis_oneshot_thread( void *dummy )
 		}
 		else {
 			shakerec = (SHAKE_RECORD *)dl_node_data_extract( node );
-			append_str2rdrec( &rdrec, shakerec->table );
+			printf(
+				"shake2redis: Delay record \"%s %s %.6lf\", refilling...\n",
+				shakerec->table, shakerec->field, shakerec->value
+			);
 		/* */
 			//MARK_TIMESTAMP_REDISREC( &rdrec );
+			append_str2rdrec( &rdrec, shakerec->table );
 			append_shakerec2rdrec( &rdrec, shakerec );
 			if ( output_hashtable_rdrec( redis, &rdrec ) )
 				goto disconnect;
