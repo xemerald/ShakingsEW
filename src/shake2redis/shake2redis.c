@@ -745,7 +745,7 @@ static thr_ret shake2redis_output_thread( void *dummy )
 	/* */
 		if ( sk2rd_msgqueue_dequeue( &shakerec, &rec_size, &rec_logo ) < 0 ) {
 		/* */
-			max_rec = sk2rd_list_total_sta_get() * 0.1;
+			max_rec = sk2rd_list_total_sta_get() * 0.5;
 			if ( max_rec < MIN_RECORDS_PER_RDREC )
 				max_rec = MIN_RECORDS_PER_RDREC;
 			else if ( max_rec > MAX_RECORDS_PER_RDREC )

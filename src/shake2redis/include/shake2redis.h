@@ -21,7 +21,7 @@
 #define SK2RD_FIELD_NAME_FORMAT    "%s_%s_%s"
 /* */
 #define MAX_RECORDS_STR_LEN    4096
-#define MAX_RECORDS_PER_RDREC  64
+#define MAX_RECORDS_PER_RDREC  128
 #define MIN_RECORDS_PER_RDREC  8
 
 /* Station peak value related struct */
