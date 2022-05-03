@@ -767,47 +767,47 @@ static thr_ret shake2redis_output_thread( void *dummy )
 					OneshotThreadStatus = THREAD_ALIVE;
 			}
 		/* Wait for next message */
-			sleep_ew(5);
-			continue;
+			sleep_ew(10);
 		}
-
-	/* Find a redis record buffer to append this shake record */
-		for ( i = 0, rdrec_ptr = rdrec_main, rdrec_empty = NULL; i < rdrec_num; i++, rdrec_ptr++ ) {
-			if ( !REDIS_RECORDS_IS_EMPTY( rdrec_ptr ) ) {
-			/* This shake record belongs to the redis record */
-				if ( SHAKEREC_BELONGS_REDISREC( rdrec_ptr, &shakerec ) )
-					break;
-			}
-			else if ( !rdrec_empty ) {
-				rdrec_empty = rdrec_ptr;
-			}
-		}
-	/* */
-		if ( i >= rdrec_num ) {
-			if ( rdrec_empty ) {
-				rdrec_ptr = rdrec_empty;
-			/* Fill the table name */
-				append_str2rdrec( rdrec_ptr, shakerec.table );
-			}
-			else {
-			/* Since the buffer is already full, we use the oneshot buffer for immediately output */
-				if ( (_shakerec = (SHAKE_RECORD *)calloc(1, sizeof(SHAKE_RECORD))) ) {
-					*_shakerec = shakerec;
-					RequestSpecificMutex(&DelayShakeRecList.mutex);
-					if ( dl_node_append( (DL_NODE **)&DelayShakeRecList.entry, _shakerec ) == NULL ) {
-						logit("e", "shake2redis: Error insert a shake record into delay linked list!\n");
-					}
-					ReleaseSpecificMutex(&DelayShakeRecList.mutex);
+		else {
+		/* Find a redis record buffer to append this shake record */
+			for ( i = 0, rdrec_ptr = rdrec_main, rdrec_empty = NULL; i < rdrec_num; i++, rdrec_ptr++ ) {
+				if ( !REDIS_RECORDS_IS_EMPTY( rdrec_ptr ) ) {
+				/* This shake record belongs to the redis record */
+					if ( SHAKEREC_BELONGS_REDISREC( rdrec_ptr, &shakerec ) )
+						break;
 				}
-				continue;
+				else if ( !rdrec_empty ) {
+					rdrec_empty = rdrec_ptr;
+				}
 			}
-		}
-	/* */
-		MARK_TIMESTAMP_REDISREC( rdrec_ptr );
-		if ( append_shakerec2rdrec( rdrec_ptr, &shakerec ) >= max_rec ) {
-			if ( output_hashtable_rdrec( redis, rdrec_ptr ) )
-				goto disconnect;
-			INIT_REDIS_RECORDS( rdrec_ptr );
+		/* */
+			if ( i >= rdrec_num ) {
+				if ( rdrec_empty ) {
+					rdrec_ptr = rdrec_empty;
+				/* Fill the table name */
+					append_str2rdrec( rdrec_ptr, shakerec.table );
+				}
+				else {
+				/* Since the buffer is already full, we use the oneshot buffer for immediately output */
+					if ( (_shakerec = (SHAKE_RECORD *)calloc(1, sizeof(SHAKE_RECORD))) ) {
+						*_shakerec = shakerec;
+						RequestSpecificMutex(&DelayShakeRecList.mutex);
+						if ( dl_node_append( (DL_NODE **)&DelayShakeRecList.entry, _shakerec ) == NULL ) {
+							logit("e", "shake2redis: Error insert a shake record into delay linked list!\n");
+						}
+						ReleaseSpecificMutex(&DelayShakeRecList.mutex);
+					}
+					continue;
+				}
+			}
+		/* */
+			MARK_TIMESTAMP_REDISREC( rdrec_ptr );
+			if ( append_shakerec2rdrec( rdrec_ptr, &shakerec ) >= max_rec ) {
+				if ( output_hashtable_rdrec( redis, rdrec_ptr ) )
+					goto disconnect;
+				INIT_REDIS_RECORDS( rdrec_ptr );
+			}
 		}
 	} while ( Finish );
 /* */
@@ -859,19 +859,13 @@ static thr_ret shake2redis_oneshot_thread( void *dummy )
 		if ( auth_redis_server( redis, RedisPass ) )
 			goto disconnect;
 	}
-/* */
-	INIT_REDIS_RECORDS( &rdrec );
 
 /* Processing loop */
 	do {
 	/* */
-		node     = NULL;
-		shakerec = NULL;
-	/* */
 		RequestSpecificMutex(&DelayShakeRecList.mutex);
 		node = dl_node_pop( (DL_NODE **)&DelayShakeRecList.entry );
 		ReleaseSpecificMutex(&DelayShakeRecList.mutex);
-
 	/* */
 		if ( !node ) {
 		/* */
@@ -881,8 +875,7 @@ static thr_ret shake2redis_oneshot_thread( void *dummy )
 				sk2rd_list_walk( check_station_latency, &timelastcheck );
 			}
 		/* Wait for next message */
-			sleep_ew(10);
-			continue;
+			sleep_ew(200);
 		}
 		else {
 			shakerec = (SHAKE_RECORD *)dl_node_data_extract( node );
@@ -891,14 +884,16 @@ static thr_ret shake2redis_oneshot_thread( void *dummy )
 				shakerec->table, shakerec->field, shakerec->value
 			);
 		/* */
+			INIT_REDIS_RECORDS( &rdrec );
 			//MARK_TIMESTAMP_REDISREC( &rdrec );
 			append_str2rdrec( &rdrec, shakerec->table );
 			append_shakerec2rdrec( &rdrec, shakerec );
 			if ( output_hashtable_rdrec( redis, &rdrec ) )
 				goto disconnect;
-			INIT_REDIS_RECORDS( &rdrec );
 		/* */
 			free(shakerec);
+			shakerec = NULL;
+			node = NULL;
 		}
 	} while ( Finish );
 /* */
@@ -929,14 +924,14 @@ static int output_hashtable_rdrec( redisContext *redis, REDIS_RECORDS *rdrec )
 	strcpy(_table, rdrec->records);
 	sprintf(command, "HSET %s", terminate_rdrec( rdrec ));
 	if ( !(reply = redisCommand(redis, command)) ) {
-		logit("et", "shake2redis: Redis HSET error!\n");
+		logit("et", "shake2redis: Redis command(HSET) error!\n");
 		return -1;
 	}
 	freeReplyObject(reply);
 /* */
 	sprintf(command, "EXPIRE %s %ld", _table, ExpireTime);
 	if ( !(reply = redisCommand(redis, command)) ) {
-		logit("et", "shake2redis: Redis EXPIRE error!\n");
+		logit("et", "shake2redis: Redis command(EXPIRE) error!\n");
 		return -1;
 	}
 	freeReplyObject(reply);
