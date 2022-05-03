@@ -33,6 +33,7 @@ static void shake2redis_lookup( void );
 static void shake2redis_status( unsigned char, short, char * );
 static void shake2redis_end( void );                /* Free all the local memory & close socket */
 static thr_ret shake2redis_output_thread( void * );
+static thr_ret shake2redis_oneshot_thread( void * );
 /* */
 static int   output_hashtable_rdrec( redisContext *, REDIS_RECORDS * );
 static int   auth_redis_server( redisContext *, const char * );
@@ -66,7 +67,8 @@ static pid_t    MyPid;                  /* for restarts by startstop            
 #define THREAD_OFF    0				/* ComputePGA has not been started      */
 #define THREAD_ALIVE  1				/* ComputePGA alive and well            */
 #define THREAD_ERR   -1				/* ComputePGA encountered error quit    */
-volatile int   OutputThreadStatus = THREAD_OFF;
+volatile int   OutputThreadStatus  = THREAD_OFF;
+volatile int   OneshotThreadStatus = THREAD_OFF;
 volatile _Bool Finish = 0;
 
 /* Things to read or derive from configuration file */
@@ -111,6 +113,12 @@ static struct {
 	uint8_t  npvalue;
 	uint8_t  pvindex[MAX_TYPE_PEAKVALUE];
 } GenIntensity[MAX_TYPE_INTENSITY];
+/* */
+static struct {
+	int     count;      /* Number of elements in the list */
+	mutex_t mutex;      /* */
+	void   *entry;      /* */
+} DelayShakeRecList;
 
 /* */
 #define INIT_REDIS_RECORDS(REDISREC) \
@@ -202,7 +210,7 @@ int main ( int argc, char **argv )
 	/* */
 		if ( OutputThreadStatus != THREAD_ALIVE ) {
 			if ( StartThread( shake2redis_output_thread, (unsigned)THREAD_STACK, &tid ) == -1 ) {
-				logit("e", "shake2redis: Error starting thread(output_pvalue); exiting!\n");
+				logit("e", "shake2redis: Error starting thread(output_thread); exiting!\n");
 				shake2redis_end();
 				exit(-1);
 			}
@@ -685,19 +693,24 @@ static thr_ret shake2redis_output_thread( void *dummy )
 	int    i;
 	int    max_rec = MIN_RECORDS_PER_RDREC;
 	double timenow;
-	time_t timelastcheck = time(NULL) + LATENCY_THRESHOLD;
 /* */
 	redisContext *redis = redisConnect(RedisHost, RedisPort);
 /* */
 	int            rdrec_num = MAX_TYPE_PEAKVALUE * LATENCY_THRESHOLD;
-	REDIS_RECORDS  rdrec_oneshot;
 	REDIS_RECORDS *rdrec_main  = NULL;
 	REDIS_RECORDS *rdrec_ptr   = NULL;
 	REDIS_RECORDS *rdrec_empty = NULL;
 /* */
 	SHAKE_RECORD   shakerec;
+	SHAKE_RECORD  *_shakerec = NULL;
 	size_t         rec_size;
 	MSG_LOGO       rec_logo;
+/* */
+#if defined( _V710 )
+	ew_thread_t   tid;            /* Thread ID */
+#else
+	unsigned      tid;            /* Thread ID */
+#endif
 
 /* Tell the main thread we're ok */
 	OutputThreadStatus = THREAD_ALIVE;
@@ -719,12 +732,15 @@ static thr_ret shake2redis_output_thread( void *dummy )
 	if ( rdrec_main ) {
 		for ( i = 0, rdrec_ptr = rdrec_main; i < rdrec_num; i++, rdrec_ptr++ )
 			INIT_REDIS_RECORDS( rdrec_ptr );
-		INIT_REDIS_RECORDS( &rdrec_oneshot );
 	}
 	else {
 		logit("e", "shake2redis: Cannot allocate the memory for Redis buffer, exiting!\n");
 		goto disconnect;
 	}
+/* Initialization for the delay list */
+	DelayShakeRecList.count = 0;
+	CreateSpecificMutex(&DelayShakeRecList.mutex);
+	DelayShakeRecList.entry = NULL;
 
 /* Processing loop */
 	do {
@@ -745,9 +761,12 @@ static thr_ret shake2redis_output_thread( void *dummy )
 					INIT_REDIS_RECORDS( rdrec_ptr );
 				}
 			}
-			if ( ((time_t)timenow - timelastcheck) >= 1 ) {
-				timelastcheck = (time_t)timenow;
-				sk2rd_list_walk( check_station_latency, &timelastcheck );
+		/* */
+			if ( OneshotThreadStatus != THREAD_ALIVE ) {
+				if ( StartThread( shake2redis_oneshot_thread, (unsigned)THREAD_STACK, &tid ) == -1 )
+					logit("e", "shake2redis: Error starting thread(oneshot_thread), try it next time!\n");
+				else
+					OneshotThreadStatus = THREAD_ALIVE;
 			}
 		/* Wait for next message */
 			sleep_ew(5);
@@ -767,17 +786,28 @@ static thr_ret shake2redis_output_thread( void *dummy )
 		}
 	/* */
 		if ( i >= rdrec_num ) {
-			if ( rdrec_empty )
+			if ( rdrec_empty ) {
 				rdrec_ptr = rdrec_empty;
-			else
+			/* Fill the table name */
+				append_str2rdrec( rdrec_ptr, shakerec.table );
+			}
+			else {
 			/* Since the buffer is already full, we use the oneshot buffer for immediately output */
-				rdrec_ptr = &rdrec_oneshot;
-		/* Fill the table name */
-			append_str2rdrec( rdrec_ptr, shakerec.table );
+				if ( (_shakerec = (SHAKE_RECORD *)calloc(1, sizeof(SHAKE_RECORD))) ) {
+					*_shakerec = shakerec;
+					RequestSpecificMutex(&DelayShakeRecList.mutex);
+					if ( dl_node_append( (DL_NODE **)&DelayShakeRecList.entry, _shakerec ) == NULL ) {
+						logit("e", "shake2redis: Error insert a shake record into delay linked list!\n");
+					}
+					DelayShakeRecList.count++;
+					ReleaseSpecificMutex(&DelayShakeRecList.mutex);
+				}
+				continue;
+			}
 		}
 	/* */
 		MARK_TIMESTAMP_REDISREC( rdrec_ptr );
-		if ( append_shakerec2rdrec( rdrec_ptr, &shakerec ) >= max_rec || rdrec_ptr == &rdrec_oneshot ) {
+		if ( append_shakerec2rdrec( rdrec_ptr, &shakerec ) >= max_rec ) {
 			if ( output_hashtable_rdrec( redis, rdrec_ptr ) )
 				goto disconnect;
 			INIT_REDIS_RECORDS( rdrec_ptr );
@@ -787,11 +817,101 @@ static thr_ret shake2redis_output_thread( void *dummy )
 disconnect:
 	redisFree(redis);
 /* */
+	RequestSpecificMutex(&DelayShakeRecList.mutex);
+	dl_list_destroy( (DL_NODE **)&DelayShakeRecList.entry, free );
+	ReleaseSpecificMutex(&DelayShakeRecList.mutex);
+	CloseSpecificMutex(&DelayShakeRecList.mutex);
+/* */
 	if ( rdrec_main )
 		free(rdrec_main);
 /* File a complaint to the main thread */
 	if ( Finish )
 		OutputThreadStatus = THREAD_ERR;
+
+	KillSelfThread();
+
+	return NULL;
+}
+
+/*
+ *
+ */
+static thr_ret shake2redis_oneshot_thread( void *dummy )
+{
+	double timenow;
+	time_t timelastcheck = time(NULL) + LATENCY_THRESHOLD;
+/* */
+	redisContext *redis = redisConnect(RedisHost, RedisPort);
+/* */
+	DL_NODE       *node     = NULL;
+	SHAKE_RECORD  *shakerec = NULL;
+	REDIS_RECORDS  rdrec;
+
+/* Tell the main thread we're ok */
+	OneshotThreadStatus = THREAD_ALIVE;
+/* */
+	if ( redis == NULL || redis->err ) {
+		if ( redis )
+			logit("e", "shake2redis: Connection error %s, exiting!\n", redis->errstr);
+		else
+			logit("e", "shake2redis: Can't allocate redis context, exiting!\n");
+	/* */
+		exit(-1);
+	}
+	else if ( strlen(RedisPass) ) {
+		if ( auth_redis_server( redis, RedisPass ) )
+			goto disconnect;
+	}
+/* */
+	INIT_REDIS_RECORDS( &rdrec );
+
+/* Processing loop */
+	do {
+	/* */
+		node     = NULL;
+		shakerec = NULL;
+	/* */
+		RequestSpecificMutex(&DelayShakeRecList.mutex);
+		if ( DelayShakeRecList.count ) {
+			node = dl_node_pop( (DL_NODE **)&DelayShakeRecList.entry );
+			DelayShakeRecList.count--;
+		}
+		ReleaseSpecificMutex(&DelayShakeRecList.mutex);
+
+	/* */
+		if ( !node ) {
+		/* */
+			timenow = get_precise_timenow();
+			if ( ((time_t)timenow - timelastcheck) >= 1 ) {
+				timelastcheck = (time_t)timenow;
+				sk2rd_list_walk( check_station_latency, &timelastcheck );
+			}
+		/* Wait for next message */
+			sleep_ew(10);
+			continue;
+		}
+		else {
+			shakerec = (SHAKE_RECORD *)dl_node_data_extract( node );
+			append_str2rdrec( &rdrec, shakerec->table );
+		/* */
+			//MARK_TIMESTAMP_REDISREC( &rdrec );
+			append_shakerec2rdrec( &rdrec, shakerec );
+			if ( output_hashtable_rdrec( redis, &rdrec ) )
+				goto disconnect;
+			INIT_REDIS_RECORDS( &rdrec );
+		/* */
+			free(shakerec);
+		}
+	} while ( Finish );
+/* */
+disconnect:
+	redisFree(redis);
+/* */
+	if ( shakerec )
+		free(shakerec);
+/* File a complaint to the main thread */
+	if ( Finish )
+		OneshotThreadStatus = THREAD_ERR;
 
 	KillSelfThread();
 
