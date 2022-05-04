@@ -689,9 +689,10 @@ static void shake2redis_end( void )
  */
 static thr_ret shake2redis_output_thread( void *dummy )
 {
-	int    i;
-	int    max_rec = MIN_RECORDS_PER_RDREC;
-	double timenow;
+	int     i;
+	int     max_rec = MIN_RECORDS_PER_RDREC;
+	uint8_t full_flag = 0;
+	double  timenow;
 /* */
 	redisContext *redis = redisConnect(RedisHost, RedisPort);
 /* */
@@ -743,7 +744,9 @@ static thr_ret shake2redis_output_thread( void *dummy )
 /* Processing loop */
 	do {
 	/* */
-		if ( sk2rd_msgqueue_dequeue( &shakerec, &rec_size, &rec_logo ) < 0 ) {
+		if ( sk2rd_msgqueue_dequeue( &shakerec, &rec_size, &rec_logo ) < 0 || full_flag ) {
+		/* */
+			full_flag = 0;
 		/* */
 			max_rec = sk2rd_list_total_sta_get() * 0.5;
 			if ( max_rec < MIN_RECORDS_PER_RDREC )
@@ -798,6 +801,8 @@ static thr_ret shake2redis_output_thread( void *dummy )
 						}
 						ReleaseSpecificMutex(&DelayShakeRecList.mutex);
 					}
+				/* */
+					full_flag = 1;
 					continue;
 				}
 			}
@@ -918,7 +923,7 @@ static int output_hashtable_rdrec( redisContext *redis, REDIS_RECORDS *rdrec )
 {
 	redisReply *reply = NULL;
 	char        _table[MAX_FIELD_LENGTH];
-	char        command[4096];
+	char        command[MAX_RECORDS_STR_LEN];
 
 /* */
 	strcpy(_table, rdrec->records);
