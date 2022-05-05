@@ -1145,14 +1145,14 @@ static void check_station_latency( const void *nodep, const int seq, void *arg )
 			stapeak->ptime[i]  = NULL_PEAKVALUE;
 			update_related_intensities( stapeak, i );
 		/* We should also drop the channels that have already stopped for over LATENCY_THRESHOLD */
-			for ( current = stapeak->chlist[i]; current != NULL; current = DL_NODE_GET_NEXT( current ) ) {
-				chapeak = (CHAN_PEAK *)DL_NODE_GET_DATA( current );
+			//for ( current = stapeak->chlist[i]; current != NULL; current = DL_NODE_GET_NEXT( current ) ) {
+				//chapeak = (CHAN_PEAK *)DL_NODE_GET_DATA( current );
 			/* */
-				if ( chapeak->ptime > 0.0 )
-					chapeak->ptime = NULL_PEAKVALUE;
-				else
-					sk2rd_list_chlist_delete( stapeak, chapeak->chan, i );
-			}
+				//if ( chapeak->ptime > 0.0 )
+					//chapeak->ptime = NULL_PEAKVALUE;
+				//else
+					//sk2rd_list_chlist_delete( stapeak, chapeak->chan, i );
+			//}
 		}
 	}
 
