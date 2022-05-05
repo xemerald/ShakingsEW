@@ -25,6 +25,7 @@ static void          destroy_sta_list( StaList * );
 static int           compare_snl( const void *, const void * ); /* The compare function of binary tree search */
 static int           compare_chan( const void *, const void * );
 static STATION_PEAK *enrich_stapeak( STATION_PEAK *, const char *, const char *, const char * );
+static CHAN_PEAK    *enrich_chapeak( CHAN_PEAK *, const char * );
 static void          free_stapeak( void * );
 static void          dummy_func( void * );
 
@@ -139,8 +140,7 @@ CHAN_PEAK *sk2rd_list_chlist_search( STATION_PEAK *stapeak, const char *chan, co
 /* Test if already in the list */
 	if ( (result = sk2rd_list_chlist_find( stapeak, chan )) == NULL ) {
 		result = (CHAN_PEAK *)calloc(1, sizeof(CHAN_PEAK));
-		memcpy(result->chan, chan, TRACE2_CHAN_LEN);
-		result->match = NULL;
+		enrich_chapeak( result, chan );
 	/* */
 		if ( dl_node_append( (DL_NODE **)&stapeak->chlist[pvalue_i], result ) == NULL ) {
 			logit("e", "shake2redis: Error insert channel into linked list!\n");
@@ -165,7 +165,7 @@ except:
 CHAN_PEAK *sk2rd_list_chlist_find( const STATION_PEAK *stapeak, const char *chan )
 {
 	CHAN_PEAK  key;
-	CHAN_PEAK *result  = NULL;
+	CHAN_PEAK *result = NULL;
 
 /* */
 	memcpy(key.chan, chan, TRACE2_CHAN_LEN);
@@ -176,6 +176,38 @@ CHAN_PEAK *sk2rd_list_chlist_find( const STATION_PEAK *stapeak, const char *chan
 	}
 
 	return *(CHAN_PEAK **)result;
+}
+
+/*
+ *
+ */
+void sk2rd_list_chlist_delete( STATION_PEAK *stapeak, const char *chan, const int pvalue_i )
+{
+	CHAN_PEAK *target  = sk2rd_list_chlist_find( stapeak, chan );
+	CHAN_PEAK *chapeak = NULL;
+	DL_NODE   *current = NULL;
+
+/* */
+	if ( target ) {
+	/* Delete it from the tree */
+		tdelete(target, &stapeak->chlist_root, compare_chan);
+	/* Then, delete it from the linked list */
+		for ( current = stapeak->chlist[pvalue_i]; current != NULL; current = DL_NODE_GET_NEXT( current ) ) {
+			chapeak = (CHAN_PEAK *)DL_NODE_GET_DATA( current );
+		/* */
+			if ( !strcmp( chapeak->chan, chan ) ) {
+				current = dl_node_delete( current, NULL );
+			/* If we deleted the first element of the list, we should reassign the next element to the head */
+				if ( DL_NODE_GET_PREV( current ) == (DL_NODE *)NULL )
+					stapeak->chlist[pvalue_i] = current;
+				break;
+			}
+		}
+	/* Real free the memory space of the channel */
+		free(target);
+	}
+
+	return;
 }
 
 /*
@@ -275,9 +307,24 @@ static STATION_PEAK *enrich_stapeak( STATION_PEAK *stapeak, const char *sta, con
 	for ( i = 0; i < MAX_TYPE_PEAKVALUE; i++ ) {
 		stapeak->chlist[i] = NULL;
 		stapeak->pvalue[i] = NULL_PEAKVALUE;
+		stapeak->ptime[i]  = NULL_PEAKVALUE;
 	}
 
 	return stapeak;
+}
+
+/*
+ *
+ */
+static CHAN_PEAK *enrich_chapeak( CHAN_PEAK *chapeak, const char *chan )
+{
+/* */
+	memcpy(chapeak->chan, chan, TRACE2_CHAN_LEN);
+	chapeak->pvalue = NULL_PEAKVALUE;
+	chapeak->ptime  = NULL_PEAKVALUE;
+	chapeak->match  = NULL;
+
+	return chapeak;
 }
 
 /*
