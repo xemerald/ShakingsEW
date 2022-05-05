@@ -186,6 +186,7 @@ void sk2rd_list_chlist_delete( STATION_PEAK *stapeak, const char *chan, const in
 	CHAN_PEAK *target  = sk2rd_list_chlist_find( stapeak, chan );
 	CHAN_PEAK *chapeak = NULL;
 	DL_NODE   *current = NULL;
+	DL_NODE   *next    = NULL;
 
 /* */
 	if ( target ) {
@@ -196,10 +197,11 @@ void sk2rd_list_chlist_delete( STATION_PEAK *stapeak, const char *chan, const in
 			chapeak = (CHAN_PEAK *)DL_NODE_GET_DATA( current );
 		/* */
 			if ( !strcmp( chapeak->chan, chan ) ) {
-				current = dl_node_delete( current, NULL );
+				next = dl_node_delete( current, NULL );
 			/* If we deleted the first element of the list, we should reassign the next element to the head */
-				if ( DL_NODE_GET_PREV( current ) == (DL_NODE *)NULL )
-					stapeak->chlist[pvalue_i] = current;
+				if ( current == stapeak->chlist[pvalue_i] )
+					stapeak->chlist[pvalue_i] = next;
+			/* */
 				break;
 			}
 		}
