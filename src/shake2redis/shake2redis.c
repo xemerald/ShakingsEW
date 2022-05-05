@@ -41,7 +41,7 @@ static int   append_shakerec2rdrec( REDIS_RECORDS *, const SHAKE_RECORD * );
 static char *append_str2rdrec( REDIS_RECORDS *, const char * );
 static char *terminate_rdrec( REDIS_RECORDS * );
 /* */
-static int    is_single_pvalue_sync( const STATION_PEAK *, const int );
+static int    is_single_pvalue_sync( STATION_PEAK *, const int );
 static int    is_needed_pvalues_sync( const STATION_PEAK *, const int );
 static void   update_related_intensities( STATION_PEAK *, const int );
 static double update_single_pvalue( STATION_PEAK *, const int );
@@ -147,7 +147,6 @@ int main ( int argc, char **argv )
 	char    *lockfile;
 	time_t   timenow;           /* current time                  */
 	time_t   timelastbeat;      /* time last heartbeat was sent  */
-	time_t   timelastcheck;     /* */
 
 	TracePeakPacket buffer;
 	STATION_PEAK   *stapeak;
@@ -200,18 +199,13 @@ int main ( int argc, char **argv )
 	sk2rd_msgqueue_init( QueueSize, sizeof(SHAKE_RECORD) + 1 );
 /* Force a heartbeat to be issued in first pass thru main loop */
 	timelastbeat  = time(&timenow) - HeartBeatInterval - 1;
-	timelastcheck = timenow + 1;
+
 /*----------------------- setup done; start main loop -------------------------*/
 	while ( 1 ) {
 	/* Send shake2redis's heartbeat */
 		if ( (time(&timenow) - timelastbeat) >= (int64_t)HeartBeatInterval ) {
 			timelastbeat = timenow;
 			shake2redis_status( TypeHeartBeat, 0, "" );
-		}
-	/* */
-		if ( (timenow - timelastcheck) >= 1 ) {
-			timelastcheck = timenow;
-			sk2rd_list_walk( check_station_latency, &timelastcheck );
 		}
 	/* */
 		if ( OutputThreadStatus != THREAD_ALIVE ) {
@@ -847,6 +841,8 @@ disconnect:
  */
 static thr_ret shake2redis_oneshot_thread( void *dummy )
 {
+	time_t timenow;
+	time_t timelastcheck = time(NULL) + 1;     /* */
 /* */
 	redisContext *redis = redisConnect(RedisHost, RedisPort);
 /* */
@@ -878,6 +874,11 @@ static thr_ret shake2redis_oneshot_thread( void *dummy )
 		ReleaseSpecificMutex(&DelayShakeRecList.mutex);
 	/* */
 		if ( !node ) {
+		/* */
+			if ( (time(&timenow) - timelastcheck) >= 1 ) {
+				timelastcheck = timenow;
+				sk2rd_list_walk( check_station_latency, &timelastcheck );
+			}
 		/* Wait for next message */
 			sleep_ew(200);
 		}
@@ -1024,16 +1025,22 @@ static char *terminate_rdrec( REDIS_RECORDS *rdrec )
 /*
  *
  */
-static int is_single_pvalue_sync( const STATION_PEAK *stapeak, const int pvalue_i )
+static int is_single_pvalue_sync( STATION_PEAK *stapeak, const int pvalue_i )
 {
 	DL_NODE   *current = NULL;
 	CHAN_PEAK *chapeak = NULL;
 	time_t     _ptime  = 0;
 
 /* */
-	for ( current = stapeak->chlist[pvalue_i]; current != NULL; current = DL_NODE_GET_NEXT( current ) ) {
+	current = stapeak->chlist[pvalue_i];
+	while ( current != NULL ) {
 		chapeak = (CHAN_PEAK *)DL_NODE_GET_DATA( current );
-		if ( _ptime == 0 )
+	/* First, fetch the next element before we do any change to the list */
+		current = DL_NODE_GET_NEXT( current );
+	/* We should drop the channel that have already been marked for over LATENCY_THRESHOLD */
+		if ( chapeak->ptime < 0.0 )
+			sk2rd_list_chlist_delete( stapeak, chapeak->chan, pvalue_i );
+		else if ( _ptime == 0 )
 			_ptime = (time_t)chapeak->ptime;
 		else if ( (time_t)chapeak->ptime != _ptime )
 			return 0;
@@ -1144,17 +1151,17 @@ static void check_station_latency( const void *nodep, const int seq, void *arg )
 			stapeak->pvalue[i] = NULL_PEAKVALUE;
 			stapeak->ptime[i]  = NULL_PEAKVALUE;
 			update_related_intensities( stapeak, i );
-		/* We should also drop the channels that have already stopped for over LATENCY_THRESHOLD */
+		/* We should also mark the channels that have already stopped for over LATENCY_THRESHOLD */
 			current = stapeak->chlist[i];
 			while ( current != NULL ) {
 				chapeak = (CHAN_PEAK *)DL_NODE_GET_DATA( current );
-			/* First, fetch the next element before we do any change to the list */
-				current = DL_NODE_GET_NEXT( current );
 			/* */
-				if ( chapeak->ptime < 0.0 )
-					sk2rd_list_chlist_delete( stapeak, chapeak->chan, i );
-				else if ( (timenow - (time_t)chapeak->ptime) > LATENCY_THRESHOLD )
-					chapeak->ptime = NULL_PEAKVALUE;
+				if ( (timenow - (time_t)chapeak->ptime) > LATENCY_THRESHOLD ) {
+					chapeak->pvalue = NULL_PEAKVALUE;
+					chapeak->ptime  = NULL_PEAKVALUE;
+				}
+			/* */
+				current = DL_NODE_GET_NEXT( current );
 			}
 		}
 	}
