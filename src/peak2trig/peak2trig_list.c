@@ -169,12 +169,13 @@ void peak2trig_list_tree_abandon( void )
  */
 int peak2trig_list_total_station_get( void )
 {
-	DL_NODE *current = NULL;
-	int      result  = 0;
+	DL_NODE *node   = NULL;
+	int      result = 0;
 
 /* */
-	for ( current = (DL_NODE *)SList->entry; current != NULL; current = DL_NODE_GET_NEXT(current) )
+	DL_LIST_FOR_EACH( (DL_NODE *)SList->entry, node ) {
 		result++;
+	}
 /* */
 	SList->count = result;
 

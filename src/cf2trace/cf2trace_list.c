@@ -173,12 +173,13 @@ void cf2tra_list_tree_abandon( void )
  */
 int cf2tra_list_total_channel_get( void )
 {
-	DL_NODE *current = NULL;
-	int      result  = 0;
+	DL_NODE *node   = NULL;
+	int      result = 0;
 
 /* */
-	for ( current = (DL_NODE *)TList->entry; current != NULL; current = DL_NODE_GET_NEXT(current) )
+	DL_LIST_FOR_EACH( (DL_NODE *)TList->entry, node ) {
 		result++;
+	}
 /* */
 	TList->count = result;
 
