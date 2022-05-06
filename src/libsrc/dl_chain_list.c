@@ -25,7 +25,8 @@ DL_NODE *dl_node_append( DL_NODE **head, const void *data )
 	DL_NODE **current = head;
 
 /**/
-	if ( current == (DL_NODE **)NULL ) return NULL;
+	if ( current == (DL_NODE **)NULL )
+		return NULL;
 /**/
 	while ( *current != (DL_NODE *)NULL ) {
 		prev    = *current;
@@ -33,7 +34,8 @@ DL_NODE *dl_node_append( DL_NODE **head, const void *data )
 	}
 /**/
 	*current = dl_node_create( data );
-	if ( *current != (DL_NODE *)NULL ) (*current)->prev = prev;
+	if ( *current != (DL_NODE *)NULL )
+		(*current)->prev = prev;
 
 	return *current;
 }
@@ -62,7 +64,8 @@ DL_NODE *dl_node_insert( DL_NODE *node, const void *data )
 			new->prev  = node;
 			new->next  = next;
 		/**/
-			if ( next != (DL_NODE *)NULL ) next->prev = new;
+			if ( next != (DL_NODE *)NULL )
+				next->prev = new;
 		}
 	}
 
@@ -89,7 +92,8 @@ DL_NODE *dl_node_push( DL_NODE **head, const void *data )
 		if ( new != (DL_NODE *)NULL ) {
 			new->next = *head;
 		/**/
-			if ( *head != NULL ) (*head)->prev = new;
+			if ( *head != NULL )
+				(*head)->prev = new;
 			*head = new;
 		}
 	}
@@ -116,7 +120,8 @@ DL_NODE *dl_node_pop( DL_NODE **head )
 		if ( current != (DL_NODE *)NULL ) {
 			*head = current->next;
 		/**/
-			if ( *head != NULL ) (*head)->prev = NULL;
+			if ( *head != NULL )
+				(*head)->prev = NULL;
 		/* Just close the chain of the pop-out node */
 			current->prev = current->next = current;
 		}
@@ -144,10 +149,13 @@ DL_NODE *dl_node_delete( DL_NODE *node, void (*func)( void * ) )
 		prev = node->prev;
 		next = node->next;
 	/**/
-		if ( prev != (DL_NODE *)NULL ) prev->next = next;
-		if ( next != (DL_NODE *)NULL ) next->prev = prev;
+		if ( prev != (DL_NODE *)NULL )
+			prev->next = next;
+		if ( next != (DL_NODE *)NULL )
+			next->prev = prev;
 	/**/
-		if ( node->data != NULL && func != NULL ) func(node->data);
+		if ( node->data != NULL && func != NULL )
+			func( node->data );
 		free(node);
 	}
 
@@ -177,6 +185,65 @@ void *dl_node_data_extract( DL_NODE *node )
 	}
 
 	return data;
+}
+
+/*
+ *  dl_node_walk() - Walking through the chain list and do the action.
+ *  argument:
+ *    head   - The head pointer of the chain list.
+ *    action - The action function want to apply to the nodes.
+ *    arg    - The action function's argument pointer.
+ *  return:
+ *    None.
+ */
+void dl_node_walk( DL_NODE *head, void (*action)( void *, const int, void * ), void *arg )
+{
+	DL_NODE *current = head;
+	void    *data    = NULL;
+	int      i       = 0;
+/* */
+	while ( current != (DL_NODE *)NULL ) {
+	/* */
+		data    = current->data;
+		current = current->next;
+		action( data, i++, arg );
+	}
+
+	return;
+}
+
+/*
+ *  dl_node_pickout() - Walking through the chain list and pick out some nodes.
+ *  argument:
+ *    head      - The head pointer of the chain list.
+ *    condition - The judging function. If return <> 0, the node will be picked out; if return equal to zero,
+ *                the node will be keep in the list.
+ *    arg       - The judging function's argument pointer.
+ *    func      - The function that will be execute before the node is deleted really.
+ *  return:
+ *    NULL  - We can't find the head of the chain list or there isn't any node in the list.
+ *    !NULL - It should be the head of the list.
+ */
+DL_NODE *dl_node_pickout( DL_NODE **head, int (*condition)( void *, void * ), void *arg, void (*func)( void * ) )
+{
+	DL_NODE **current = head;
+	void     *data    = NULL;
+
+/* */
+	if ( current == (DL_NODE **)NULL )
+		return NULL;
+/* */
+	while ( *current != (DL_NODE *)NULL ) {
+	/* */
+		data = (*current)->data;
+	/* */
+		if ( data && condition( data, arg ) )
+			*current = dl_node_delete( *current, func );
+		else
+			current = &(*current)->next;
+	}
+
+	return *head;
 }
 
 /*

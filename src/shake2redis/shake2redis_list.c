@@ -26,6 +26,7 @@ static int           compare_snl( const void *, const void * ); /* The compare f
 static int           compare_chan( const void *, const void * );
 static STATION_PEAK *enrich_stapeak( STATION_PEAK *, const char *, const char *, const char * );
 static CHAN_PEAK    *enrich_chapeak( CHAN_PEAK *, const char * );
+static int           chlist_delete_cond( void *, void * );
 static void          free_stapeak( void * );
 static void          dummy_func( void * );
 
@@ -118,14 +119,15 @@ STATION_PEAK *sk2rd_list_find( const char *sta, const char *net, const char *loc
  *  Returns:
  *    None.
  */
-void sk2rd_list_walk( void (*action)(const void *, const int, void *), void *arg )
+void sk2rd_list_walk( void (*action)( void *, const int, void * ), void *arg )
 {
-	int      i;
-	DL_NODE *current = NULL;
+	int      i    = 0;
+	DL_NODE *node = NULL;
 
 /* */
-	for ( current = (DL_NODE *)SList->entry, i = 0; current != NULL; current = DL_NODE_GET_NEXT(current), i++ )
-		action( DL_NODE_GET_DATA(current), i, arg );
+	DL_LIST_FOR_EACH( (DL_NODE *)SList->entry, node ) {
+		action( DL_NODE_GET_DATA( node ), i++, arg );
+	}
 
 	return;
 }
@@ -183,28 +185,16 @@ CHAN_PEAK *sk2rd_list_chlist_find( const STATION_PEAK *stapeak, const char *chan
  */
 void sk2rd_list_chlist_delete( STATION_PEAK *stapeak, const char *chan, const int pvalue_i )
 {
-	CHAN_PEAK *target  = sk2rd_list_chlist_find( stapeak, chan );
-	CHAN_PEAK *chapeak = NULL;
-	DL_NODE   *current = NULL;
-	DL_NODE   *next    = NULL;
+	CHAN_PEAK *target = sk2rd_list_chlist_find( stapeak, chan );
 
 /* */
 	if ( target ) {
 	/* Delete it from the tree */
 		tdelete(target, &stapeak->chlist_root, compare_chan);
 	/* Then, delete it from the linked list */
-		for ( current = stapeak->chlist[pvalue_i]; current != NULL; current = DL_NODE_GET_NEXT( current ) ) {
-			chapeak = (CHAN_PEAK *)DL_NODE_GET_DATA( current );
-		/* */
-			if ( !strcmp( chapeak->chan, chan ) ) {
-				next = dl_node_delete( current, NULL );
-			/* If we deleted the first element of the list, we should reassign the next element to the head */
-				if ( current == stapeak->chlist[pvalue_i] )
-					stapeak->chlist[pvalue_i] = next;
-			/* */
-				break;
-			}
-		}
+		dl_node_pickout(
+			(DL_NODE **)&stapeak->chlist[pvalue_i], chlist_delete_cond, target, NULL
+		);
 	/* Real free the memory space of the channel */
 		free(target);
 	}
@@ -327,6 +317,20 @@ static CHAN_PEAK *enrich_chapeak( CHAN_PEAK *chapeak, const char *chan )
 	chapeak->match  = NULL;
 
 	return chapeak;
+}
+
+/*
+ *
+ */
+static int chlist_delete_cond( void *node, void *arg )
+{
+	CHAN_PEAK *chapeak = (CHAN_PEAK *)node;
+	CHAN_PEAK *target  = (CHAN_PEAK *)arg;
+/* */
+	if ( chapeak == target )
+		return 1;
+
+	return 0;
 }
 
 /*

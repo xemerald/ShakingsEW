@@ -45,7 +45,7 @@ static int    is_single_pvalue_sync( const STATION_PEAK *, const int );
 static int    is_needed_pvalues_sync( const STATION_PEAK *, const int );
 static void   update_related_intensities( STATION_PEAK *, const int );
 static double update_single_pvalue( STATION_PEAK *, const int );
-static void   check_station_latency( const void *, const int, void * );
+static void   check_station_latency( void *, const int, void * );
 static double get_precise_timenow( void );
 static void  *proc_com_sv_index( const char * );
 static int    proc_com_input_pv( int, const int );
@@ -751,7 +751,7 @@ static thr_ret shake2redis_output_thread( void *dummy )
 /* Processing loop */
 	do {
 	/* */
-		if ( sk2rd_msgqueue_dequeue( &shakerec, &rec_size, &rec_logo ) < 0 || full_flag ) {
+		if ( full_flag || sk2rd_msgqueue_dequeue( &shakerec, &rec_size, &rec_logo ) < 0 ) {
 		/* */
 			full_flag = 0;
 		/* */
@@ -1026,13 +1026,12 @@ static char *terminate_rdrec( REDIS_RECORDS *rdrec )
  */
 static int is_single_pvalue_sync( const STATION_PEAK *stapeak, const int pvalue_i )
 {
-	DL_NODE   *current = NULL;
+	DL_NODE   *node    = NULL;
 	CHAN_PEAK *chapeak = NULL;
 	time_t     _ptime  = 0;
 
 /* */
-	for ( current = stapeak->chlist[pvalue_i]; current != NULL; current = DL_NODE_GET_NEXT( current ) ) {
-		chapeak = (CHAN_PEAK *)DL_NODE_GET_DATA( current );
+	DL_LIST_FOR_EACH_DATA( (DL_NODE *)stapeak->chlist[pvalue_i], node, chapeak ) {
 		if ( _ptime == 0 )
 			_ptime = (time_t)chapeak->ptime;
 		else if ( (time_t)chapeak->ptime != _ptime )
@@ -1069,7 +1068,7 @@ static int is_needed_pvalues_sync( const STATION_PEAK *stapeak, const int intens
  */
 static double update_single_pvalue( STATION_PEAK *stapeak, const int pvalue_i )
 {
-	DL_NODE   *current = NULL;
+	DL_NODE   *node    = NULL;
 	CHAN_PEAK *chapeak = NULL;
 	double     _pvalue = NULL_PEAKVALUE;
 	double     _ptime  = NULL_PEAKVALUE;
@@ -1077,8 +1076,7 @@ static double update_single_pvalue( STATION_PEAK *stapeak, const int pvalue_i )
  	SHAKE_RECORD shakerec;
 
 /* */
-	for ( current = stapeak->chlist[pvalue_i]; current != NULL; current = DL_NODE_GET_NEXT( current ) ) {
-		chapeak = (CHAN_PEAK *)DL_NODE_GET_DATA( current );
+	DL_LIST_FOR_EACH_DATA( (DL_NODE *)stapeak->chlist[pvalue_i], node, chapeak ) {
 		if ( chapeak->pvalue > _pvalue ) {
 			_pvalue = chapeak->pvalue;
 			_ptime  = chapeak->ptime;
@@ -1131,12 +1129,13 @@ static void update_related_intensities( STATION_PEAK *stapeak, const int pvalue_
 /*
  *
  */
-static void check_station_latency( const void *nodep, const int seq, void *arg )
+static void check_station_latency( void *nodep, const int seq, void *arg )
 {
 	int           i;
 	STATION_PEAK *stapeak = (STATION_PEAK *)nodep;
 	CHAN_PEAK    *chapeak = NULL;
-	DL_NODE      *current = NULL;
+	DL_NODE      *node    = NULL;
+	DL_NODE      *safe    = NULL;
 	time_t        timenow = *(time_t *)arg;
 
 	for ( i = 0; i < nPeakValue; i++ ) {
@@ -1145,11 +1144,7 @@ static void check_station_latency( const void *nodep, const int seq, void *arg )
 			stapeak->ptime[i]  = NULL_PEAKVALUE;
 			update_related_intensities( stapeak, i );
 		/* We should also drop the channels that have already stopped for over LATENCY_THRESHOLD */
-			current = stapeak->chlist[i];
-			while ( current != NULL ) {
-				chapeak = (CHAN_PEAK *)DL_NODE_GET_DATA( current );
-			/* First, fetch the next element before we do any change to the list */
-				current = DL_NODE_GET_NEXT( current );
+			DL_LIST_FOR_EACH_DATA_SAFE( (DL_NODE *)stapeak->chlist[i], node, chapeak, safe ) {
 			/* */
 				if ( chapeak->ptime < 0.0 ) {
 					sk2rd_list_chlist_delete( stapeak, chapeak->chan, i );
