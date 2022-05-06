@@ -49,6 +49,6 @@ DL_NODE *dl_node_push( DL_NODE **, const void * );
 DL_NODE *dl_node_pop( DL_NODE ** );
 DL_NODE *dl_node_delete( DL_NODE *, void (*)( void * ) );
 void    *dl_node_data_extract( DL_NODE * );
-void     dl_node_walk( DL_NODE *, void (*)( void *, const int, void * ), void * );
-DL_NODE *dl_node_pickout( DL_NODE **, int (*)( void *, void * ), void *, void (*)( void * ) );
+void     dl_list_walk( DL_NODE *, void (*)( void *, const int, void * ), void * );
+DL_NODE *dl_list_pickout( DL_NODE **, int (*)( void *, void * ), void *, void (*)( void * ) );
 void     dl_list_destroy( DL_NODE **, void (*)( void * ) );
