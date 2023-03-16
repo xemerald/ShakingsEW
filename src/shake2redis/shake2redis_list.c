@@ -192,7 +192,7 @@ void sk2rd_list_chlist_delete( STATION_PEAK *stapeak, const char *chan, const in
 	/* Delete it from the tree */
 		tdelete(target, &stapeak->chlist_root, compare_chan);
 	/* Then, delete it from the linked list */
-		dl_list_pickout(
+		dl_list_filter(
 			(DL_NODE **)&stapeak->chlist[pvalue_i], chlist_delete_cond, target, NULL
 		);
 	/* Real free the memory space of the channel */

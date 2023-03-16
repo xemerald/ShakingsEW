@@ -213,7 +213,7 @@ void dl_list_walk( DL_NODE *head, void (*action)( void *, const int, void * ), v
 }
 
 /*
- *  dl_list_pickout() - Walking through the chain list and pick out some nodes.
+ *  dl_list_filter() - Walking through the chain list and pick out some nodes.
  *  argument:
  *    head      - The head pointer of the chain list.
  *    condition - The judging function. If return <> 0, the node will be picked out; if return equal to zero,
@@ -224,7 +224,7 @@ void dl_list_walk( DL_NODE *head, void (*action)( void *, const int, void * ), v
  *    NULL  - We can't find the head of the chain list or there isn't any node in the list.
  *    !NULL - It should be the head of the list.
  */
-DL_NODE *dl_list_pickout( DL_NODE **head, int (*condition)( void *, void * ), void *arg, void (*func)( void * ) )
+DL_NODE *dl_list_filter( DL_NODE **head, int (*condition)( void *, void * ), void *arg, void (*func)( void * ) )
 {
 	DL_NODE **current = head;
 	void     *data    = NULL;

@@ -441,7 +441,7 @@ static void respectra_config( char *configfile )
 				str = k_str();
 				if ( str ) {
 					char typestr[8];
-					strncpy(typestr, str, 8);
+					memcpy(typestr, str, 8);
 					for ( i = 0; i < 8; i++ )
 						typestr[i] = tolower(typestr[i]);
 				/* Compare the type string */
