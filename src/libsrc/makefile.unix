@@ -13,7 +13,7 @@ LOCAL_UTILS = \
 	scnlfilter.o \
 	shakeint.o
 
-CFLAGS  = $(GLOBALFLAGS) -g -I/usr/include/mysql -I../../include
+CFLAGS  = $(GLOBALFLAGS) -I/usr/include/mysql -I../../include
 
 LIB_DIR = ../../lib
 

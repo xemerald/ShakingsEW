@@ -4,10 +4,10 @@ MODULES = \
 	peak2trig \
 	postshake \
 	respectra \
+	trace2peak \
 	shakemap \
 	shake2redis \
 	shake2ws \
-	trace2peak
 
 #####################
 # Top level targets #

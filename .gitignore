@@ -10,5 +10,8 @@
 
 # Ignore the execute files.
 
-# Igonre DB Pass.
+# Ignore DB Pass.
 .dbpass
+
+# Ignore vscode
+.vscode
