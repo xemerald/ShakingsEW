@@ -11,8 +11,8 @@ LogFile            1              # 0 to turn off disk log file; 1 to turn it on
                                   # to log to module log but not stderr/stdout
 HeartBeatInterval  15             # seconds between heartbeats
 
-# Switch of module operating type, you can switch between differential(diff) &
-# integral(int):
+# Switch of module operating type, you can switch in differential(diff), double differential(ddiff),
+# integral(int) & double integral(dint):
 #
 OperationType      int
 

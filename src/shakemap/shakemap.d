@@ -12,9 +12,9 @@ LogFile             1               # 0 to turn off disk log file; 1 to turn it 
                                     # to log to module log but not stderr/stdout
 HeartBeatInterval   15              # seconds between heartbeats
 UpdateInterval      0               # setting for automatical updating interval (seconds). If set this
-								    # parameter larger than 0, the program will update the stations'
-								    # list with this interval; or the program will ignore the new
-								    # incoming trace.
+                                    # parameter larger than 0, the program will update the stations'
+                                    # list with this interval; or the program will ignore the new
+                                    # incoming trace.
 QueueSize           10              # max messages in internal circular msg buffer
 
 #  Algorithm related parameters:

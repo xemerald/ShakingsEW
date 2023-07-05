@@ -18,8 +18,7 @@ typedef struct {
 	uint8_t     firsttime;
 	uint16_t    readycount;
 	double      lasttime;
-	double      lastsample;
-	double      lastresult;
+	double      lastsample[3];
 	double      average;
 	double      delta;
 	IIR_STAGE  *stage;

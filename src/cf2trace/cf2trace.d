@@ -12,9 +12,9 @@ LogFile            1              # 0 to turn off disk log file; 1 to turn it on
 HeartBeatInterval  15             # seconds between heartbeats
 
 UpdateInterval     0              # setting for automatical updating interval (seconds). If set this
-								  # parameter larger than 0, the program will update the channels'
-								  # list with this interval; or the program will ignore the new
-								  # incoming trace.
+                                  # parameter larger than 0, the program will update the channels'
+                                  # list with this interval; or the program will ignore the new
+                                  # incoming trace.
 # MySQL server information:
 #
 # If you setup the follow parameter especially SQLHost, this program will fetch

@@ -31,20 +31,25 @@ static void dif2trace_status( unsigned char, short, char * );
 static void dif2trace_end( void );                /* Free all the local memory & close socket */
 
 static void init_traceinfo( const TRACE2X_HEADER *, const uint8_t, _TRACEINFO * );
-static void operation_int( _TRACEINFO *, float *, float *const );
+static void operation_rmavg( _TRACEINFO *, float *, float *const );
 static void operation_diff( _TRACEINFO *, float *, float *const );
+static void operation_ddiff( _TRACEINFO *, float *, float *const );
+static void operation_int( _TRACEINFO *, float *, float *const );
+static void operation_dint( _TRACEINFO *, float *, float *const );
 
 /* Ring messages things */
 static SHM_INFO InRegion;      /* shared memory region to use for i/o    */
 static SHM_INFO OutRegion;     /* shared memory region to use for i/o    */
 /* */
 #define MAXLOGO 5
-static MSG_LOGO Putlogo;                /* array for output module, type, instid     */
-static MSG_LOGO Getlogo[MAXLOGO];                /* array for requesting module, type, instid */
-static pid_t    MyPid;                  /* for restarts by startstop                 */
+static MSG_LOGO Putlogo;             /* array for output module, type, instid     */
+static MSG_LOGO Getlogo[MAXLOGO];    /* array for requesting module, type, instid */
+static pid_t    MyPid;               /* for restarts by startstop                 */
 
 #define OPERATION_DIFF  0
-#define OPERATION_INT   1
+#define OPERATION_DDIFF 1
+#define OPERATION_INT   2
+#define OPERATION_DINT  3
 
 /* Things to read or derive from configuration file */
 static char     InRingName[MAX_RING_STR];   /* name of transport ring for i/o    */
@@ -146,22 +151,32 @@ int main ( int argc, char **argv )
 
 /* Initialization of filter and operation function */
 	switch ( OperationFlag ) {
-	case OPERATION_INT:
-		operationfunc = operation_int;
-		operationdirc = -1;
-	/* Initialize the filter parameters, use the butterworth high pass filter */
-		if ( dif2tra_filter_init( HighPassOrder, HighPassCorner, 0.0, IIR_HIGHPASS_FILTER, IIR_BUTTERWORTH ) ) {
-			logit("e", "dif2trace: Initialize the high pass filter error, exiting!\n");
-			exit(-1);
-		}
-		break;
 	case OPERATION_DIFF:
 		operationfunc = operation_diff;
 		operationdirc = 1;
 		break;
+	case OPERATION_DDIFF:
+		operationfunc = operation_ddiff;
+		operationdirc = 2;
+		break;
+	case OPERATION_INT:
+		operationfunc = operation_int;
+		operationdirc = -1;
+		break;
+	case OPERATION_DINT:
+		operationfunc = operation_dint;
+		operationdirc = -2;
+		break;
 	default:
 		logit("e", "dif2trace: Unknown operation type, exiting!\n");
 		exit(-1);
+	}
+/* Initialize the filter parameters, use the butterworth high pass filter */
+	if ( OperationFlag == OPERATION_INT || OperationFlag == OPERATION_DINT ) {
+		if ( dif2tra_filter_init( HighPassOrder, HighPassCorner, 0.0, IIR_HIGHPASS_FILTER, IIR_BUTTERWORTH ) ) {
+			logit("e", "dif2trace: Initialize the high pass filter error, exiting!\n");
+			exit(-1);
+		}
 	}
 /* Force a heartbeat to be issued in first pass thru main loop */
 	timeLastBeat = time(&timeNow) - HeartBeatInterval - 1;
@@ -325,6 +340,8 @@ int main ( int argc, char **argv )
 				tracedata_end = tracedata_f + tracebuffer.trh2x.nsamp;
 			/* Wait for the D.C. */
 				if ( traceptr->readycount >= DriftCorrectThreshold ) {
+				/* */
+					operation_rmavg( traceptr, tracedata_f, tracedata_end );
 					operationfunc( traceptr, tracedata_f, tracedata_end );
 				/* Modify the trace header to indicate that the data already been processed */
 					tracebuffer.trh2x.pinno += operationdirc;
@@ -336,10 +353,9 @@ int main ( int argc, char **argv )
 						logit("e", "dif2trace: Error putting message in region %ld\n", OutRegion.key);
 				}
 				else {
-					traceptr->readycount += (uint16_t)(tracebuffer.trh2x.nsamp/tracebuffer.trh2x.samprate + 0.5);
+					traceptr->readycount += (uint16_t)(tracebuffer.trh2x.nsamp / tracebuffer.trh2x.samprate + 0.5);
 				/* */
-					for ( ; tracedata_f < tracedata_end; tracedata_f++ )
-						traceptr->average += 0.001 * (*tracedata_f - traceptr->average);
+					operation_rmavg( traceptr, tracedata_f, tracedata_end );
 
 					if ( traceptr->readycount >= DriftCorrectThreshold ) {
 						printf(
@@ -460,8 +476,14 @@ static void dif2trace_config( char *configfile )
 					if ( !strncmp(typestr, "diff", 4) ) {
 						OperationFlag = OPERATION_DIFF;
 					}
+					else if ( !strncmp(typestr, "ddiff", 5) ) {
+						OperationFlag = OPERATION_DDIFF;
+					}
 					else if ( !strncmp(typestr, "int", 3) ) {
 						OperationFlag = OPERATION_INT;
+					}
+					else if ( !strncmp(typestr, "dint", 4) ) {
+						OperationFlag = OPERATION_DINT;
 					}
 					else {
 						logit("e", "dif2trace: Invalid operation type <%s>", str);
@@ -660,15 +682,16 @@ static void dif2trace_end( void )
  */
 static void init_traceinfo( const TRACE2X_HEADER *trh2x, const uint8_t opflag, _TRACEINFO *traceptr )
 {
-	traceptr->firsttime  = FALSE;
-	traceptr->readycount = 0;
-	traceptr->lasttime   = 0.0;
-	traceptr->lastsample = 0.0;
-	traceptr->lastresult = 0.0;
-	traceptr->average    = 0.0;
-	traceptr->delta      = 1.0 / trh2x->samprate;
+	traceptr->firsttime     = FALSE;
+	traceptr->readycount    = 0;
+	traceptr->lasttime      = 0.0;
+	traceptr->lastsample[0] = 0.0;
+	traceptr->lastsample[1] = 0.0;
+	traceptr->lastsample[2] = 0.0;
+	traceptr->average       = 0.0;
+	traceptr->delta         = 1.0 / trh2x->samprate;
 
-	if ( opflag == OPERATION_INT ) {
+	if ( opflag == OPERATION_INT || opflag == OPERATION_DINT ) {
 		if ( traceptr->stage != (IIR_STAGE *)NULL )
 			free(traceptr->stage);
 		traceptr->filter = dif2tra_filter_search( traceptr );
@@ -681,28 +704,13 @@ static void init_traceinfo( const TRACE2X_HEADER *trh2x, const uint8_t opflag, _
 /*
  *
  */
-static void operation_int( _TRACEINFO *traceptr, float *tracedata_f, float *const tracedata_end )
+static void operation_rmavg( _TRACEINFO *traceptr, float *tracedata_f, float *const tracedata_end )
 {
-	const double halfdelta = traceptr->delta * 0.5;
-
-	double dsample;
-	double intresult;
-
 /* Go through all the data */
 	for ( ; tracedata_f < tracedata_end; tracedata_f++ ) {
 	/* Compute the data average & remove it */
 		traceptr->average += 0.001 * (*tracedata_f - traceptr->average);
-		dsample            = *tracedata_f - traceptr->average;
-
-	/* Do integral */
-		intresult = (traceptr->lastsample + dsample)*halfdelta + traceptr->lastresult;
-		traceptr->lastsample = dsample;
-		traceptr->lastresult = intresult;
-
-	/* Apply the highpass filter */
-		intresult = dif2tra_filter_apply( intresult, traceptr );
-
-		*tracedata_f = (float)intresult;
+		*tracedata_f      -= traceptr->average;
 	}
 
 	return;
@@ -713,21 +721,90 @@ static void operation_int( _TRACEINFO *traceptr, float *tracedata_f, float *cons
  */
 static void operation_diff( _TRACEINFO *traceptr, float *tracedata_f, float *const tracedata_end )
 {
-	double dsample;
-	double difresult;
+	double result;
 
 /* Go through all the data */
 	for ( ; tracedata_f < tracedata_end; tracedata_f++ ) {
-	/* Compute the data average & remove it */
-		traceptr->average += 0.001 * (*tracedata_f - traceptr->average);
-		dsample            = *tracedata_f - traceptr->average;
-
 	/* Do differential */
-		difresult = (dsample - traceptr->lastsample)/traceptr->delta;
-		traceptr->lastsample = dsample;
-		traceptr->lastresult = difresult;
+		result = (*tracedata_f - traceptr->lastsample[0]) / traceptr->delta;
+		traceptr->lastsample[0] = *tracedata_f;
+		traceptr->lastsample[1] = result;
 
-		*tracedata_f = (float)difresult;
+		*tracedata_f = (float)result;
+	}
+
+	return;
+}
+
+/*
+ *
+ */
+static void operation_ddiff( _TRACEINFO *traceptr, float *tracedata_f, float *const tracedata_end )
+{
+	double result;
+	double tmp;
+
+/* Go through all the data */
+	for ( ; tracedata_f < tracedata_end; tracedata_f++ ) {
+	/* Do differential */
+		tmp = (*tracedata_f - traceptr->lastsample[0]) / traceptr->delta;
+		result = (tmp - traceptr->lastsample[1]) / traceptr->delta;
+		traceptr->lastsample[0] = *tracedata_f;
+		traceptr->lastsample[1] = tmp;
+		traceptr->lastsample[2] = result;
+
+		*tracedata_f = (float)result;
+	}
+
+	return;
+}
+
+/*
+ *
+ */
+static void operation_int( _TRACEINFO *traceptr, float *tracedata_f, float *const tracedata_end )
+{
+	const double halfdelta = traceptr->delta * 0.5;
+	double result;
+
+/* Go through all the data */
+	for ( ; tracedata_f < tracedata_end; tracedata_f++ ) {
+	/* Do integral */
+		result = (traceptr->lastsample[0] + *tracedata_f) * halfdelta + traceptr->lastsample[1];
+		traceptr->lastsample[0] = *tracedata_f;
+		traceptr->lastsample[1] = result;
+
+	/* Apply the highpass filter */
+		result = dif2tra_filter_apply( result, traceptr );
+
+		*tracedata_f = (float)result;
+	}
+
+	return;
+}
+
+/*
+ *
+ */
+static void operation_dint( _TRACEINFO *traceptr, float *tracedata_f, float *const tracedata_end )
+{
+	const double halfdelta = traceptr->delta * 0.5;
+	double result;
+	double tmp;
+
+/* Go through all the data */
+	for ( ; tracedata_f < tracedata_end; tracedata_f++ ) {
+	/* Do integral */
+		tmp = (traceptr->lastsample[0] + *tracedata_f) * halfdelta + traceptr->lastsample[1];
+		result = (traceptr->lastsample[1] + tmp) * halfdelta + traceptr->lastsample[2];
+		traceptr->lastsample[0] = *tracedata_f ;
+		traceptr->lastsample[1] = tmp;
+		traceptr->lastsample[2] = result;
+
+	/* Apply the highpass filter */
+		result = dif2tra_filter_apply( result, traceptr );
+
+		*tracedata_f = (float)result;
 	}
 
 	return;
