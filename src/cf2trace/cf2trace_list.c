@@ -126,7 +126,7 @@ _TRACEINFO *cf2tra_list_find( const TRACE2X_HEADER *trh2x )
 	memcpy(key.sta, trh2x->sta, TRACE2_STA_LEN);
 	memcpy(key.net, trh2x->net, TRACE2_NET_LEN);
 	memcpy(key.loc, trh2x->loc, TRACE2_LOC_LEN);
-	memcpy(key.chan, trh2x->chan, TRACE2_LOC_LEN);
+	memcpy(key.chan, trh2x->chan, TRACE2_CHAN_LEN);
 /* Find which station */
 	if ( (result = tfind(&key, &TList->root, compare_scnl)) != NULL ) {
 	/* Found in the main Palert table */
@@ -427,13 +427,13 @@ static int compare_scnl( const void *a, const void *b )
 	_TRACEINFO *tmpb = (_TRACEINFO *)b;
 	int         rc;
 
-	if ( (rc = strcmp(tmpa->sta, tmpb->sta)) != 0 )
+	if ( (rc = memcmp(tmpa->sta, tmpb->sta, TRACE2_STA_LEN)) != 0 )
 		return rc;
-	if ( (rc = strcmp(tmpa->chan, tmpb->chan)) != 0 )
+	if ( (rc = memcmp(tmpa->chan, tmpb->chan, TRACE2_CHAN_LEN)) != 0 )
 		return rc;
-	if ( (rc = strcmp(tmpa->net, tmpb->net)) != 0 )
+	if ( (rc = memcmp(tmpa->net, tmpb->net, TRACE2_NET_LEN)) != 0 )
 		return rc;
-	return strcmp(tmpa->loc, tmpb->loc);
+	return memcmp(tmpa->loc, tmpb->loc, TRACE2_LOC_LEN);
 }
 
 /*

@@ -193,7 +193,7 @@ int main ( int argc, char **argv )
 			if ( res == TERMINATE || res == MyPid ) {
 			/* write a termination msg to log file */
 				logit("t", "cf2trace: Termination requested; exiting!\n");
-				fflush( stdout );
+				fflush(stdout);
 			/* */
 				goto exit_procedure;
 			}
@@ -235,7 +235,7 @@ int main ( int argc, char **argv )
 			if ( reclogo.type == TypeTracebuf2 ) {
 				if ( TRACE2_HEADER_VERSION_IS_20(&tracebuffer_i.trh2) ) {
 				/* Swap the byte order to local order */
-					if ( WaveMsg2MakeLocal( &tracebuffer_i.trh2 ) ) {
+					if ( WaveMsg2MakeLocal(&tracebuffer_i.trh2) ) {
 						logit(
 							"e", "cf2trace: SCNL %s.%s.%s.%s byte order swap error, please check it!\n",
 							tracebuffer_i.trh2.sta, tracebuffer_i.trh2.chan, tracebuffer_i.trh2.net,
@@ -247,7 +247,7 @@ int main ( int argc, char **argv )
 				}
 				else if ( TRACE2_HEADER_VERSION_IS_21(&tracebuffer_i.trh2) ) {
 				/* Swap the byte order to local order */
-					if ( WaveMsg2XMakeLocal( &tracebuffer_i.trh2x ) ) {
+					if ( WaveMsg2XMakeLocal(&tracebuffer_i.trh2x) ) {
 						logit(
 							"e", "cf2trace: SCNL %s.%s.%s.%s byte order swap error, please check it!\n",
 							tracebuffer_i.trh2x.sta, tracebuffer_i.trh2x.chan, tracebuffer_i.trh2x.net,
@@ -275,8 +275,8 @@ int main ( int argc, char **argv )
 				}
 			/* Copy all the header data into the output buffer */
 				memcpy(tracebuffer_o.msg, tracebuffer_i.msg, sizeof(TRACE2X_HEADER));
-			/* */
-				tracebuffer_o.trh2x.pinno                   = traceptr->recordtype; /* Temporally use this space to store the record type*/
+			/* Temporally use this space to store the record type*/
+				tracebuffer_o.trh2x.pinno                   = traceptr->recordtype; 
 				tracebuffer_o.trh2x.x.v21.conversion_factor = traceptr->conversion_factor;
 			/* */
 				tracebuffer_o.trh2x.datatype[1] = '4';

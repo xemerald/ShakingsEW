@@ -13,8 +13,8 @@ HeartBeatInterval  15             # seconds between heartbeats
 
 UpdateInterval     0              # setting for automatical updating interval (seconds). If set this
                                   # parameter larger than 0, the program will update the channels'
-                                  # list with this interval; or the program will ignore the new
-                                  # incoming trace.
+                                  # list with this interval; or the program will ignore the incoming
+                                  # new trace.
 # MySQL server information:
 #
 # If you setup the follow parameter especially SQLHost, this program will fetch
