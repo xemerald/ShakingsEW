@@ -301,7 +301,7 @@ int main ( int argc, char **argv )
 				}
 			/* Start processing the gap in trace */
 				if ( fabs(tmp_time = tracebuffer.trh2x.starttime - traceptr->lasttime) > traceptr->delta * 2.0 ) {
-					if ( (long)tracebuffer.trh2x.starttime > (time(&timeNow) + 3) ) {
+					if ( (time_t)tracebuffer.trh2x.starttime > (time(&timeNow) + 3) ) {
 					/* Debug */
 						//printf( "dif2trace: %s.%s.%s.%s NTP sync error, drop it!\n",
 						//tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc );
@@ -690,7 +690,7 @@ static void init_traceinfo( const TRACE2X_HEADER *trh2x, const uint8_t opflag, _
 	traceptr->lastsample[2] = 0.0;
 	traceptr->average       = 0.0;
 	traceptr->delta         = 1.0 / trh2x->samprate;
-
+/* Prepare the filter & stage space for integration */
 	if ( opflag == OPERATION_INT || opflag == OPERATION_DINT ) {
 		if ( traceptr->stage != (IIR_STAGE *)NULL )
 			free(traceptr->stage);

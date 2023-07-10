@@ -26,7 +26,6 @@ static double FreqLow     = 0.0;
 static IIR_FILTER_TYPE      FilterType  = IIR_FILTER_TYPE_COUNT;
 static IIR_ANALOG_PROTOTYPE AnalogPtype = IIR_ANALOG_PROTOTYPE_COUNT;
 
-
 /*
  * dif2tra_filter_init() - Initialization function of filter chain.
  * Arguments:

@@ -18,7 +18,7 @@ OperationType      int
 
 # Setting of high-pass filter applied after integral, it include order & corner of
 # filter. The default value for these are 2 & 0.075 respectively. If this module is
-# running under differential mode, you can just skip it.
+# running under differential(diff & ddiff) mode, you can just skip it.
 #
 HighPassOrder       2
 HighPassCorner      0.075

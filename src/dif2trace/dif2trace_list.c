@@ -2,11 +2,9 @@
 /* Standard C header include */
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
 #include <string.h>
 #include <search.h>
 #include <unistd.h>
-#include <errno.h>
 /* Earthworm environment header include */
 #include <earthworm.h>
 #include <trace_buf.h>
@@ -105,13 +103,13 @@ static int compare_scnl( const void *a, const void *b )
 	_TRACEINFO *tmpb = (_TRACEINFO *)b;
 	int         rc;
 
-	if ( (rc = strcmp(tmpa->sta, tmpb->sta)) != 0 )
+	if ( (rc = memcmp(tmpa->sta, tmpb->sta, TRACE2_STA_LEN)) != 0 )
 		return rc;
-	if ( (rc = strcmp(tmpa->chan, tmpb->chan)) != 0 )
+	if ( (rc = memcmp(tmpa->chan, tmpb->chan, TRACE2_CHAN_LEN)) != 0 )
 		return rc;
-	if ( (rc = strcmp(tmpa->net, tmpb->net)) != 0 )
+	if ( (rc = memcmp(tmpa->net, tmpb->net, TRACE2_NET_LEN)) != 0 )
 		return rc;
-	return strcmp(tmpa->loc, tmpb->loc);
+	return memcmp(tmpa->loc, tmpb->loc, TRACE2_LOC_LEN);
 }
 
 /*
