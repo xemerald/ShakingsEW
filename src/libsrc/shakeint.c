@@ -61,7 +61,7 @@ SHAKE_TYPE shakestr2num( const char *_typestr ) {
 
 	strcpy(ltypestr, _typestr);
 
-	for( i = 0; ltypestr[i]; i++ ) ltypestr[i] = tolower(ltypestr[i]);
+	for ( i = 0; ltypestr[i]; i++ ) ltypestr[i] = tolower(ltypestr[i]);
 
 	for ( i = SHAKE_PAPGA; i < SHAKE_TYPE_COUNT; i++ )
 		if ( strncmp(ltypestr, TypeInfo[i].typestring, strlen(TypeInfo[i].typestring)) == 0 ) break;

@@ -42,7 +42,7 @@ MYSQL_RES *dblist_sta_query_sql( const DBINFO *dbinfo, const char *table, const 
 	va_start(ap, num_col);
 	gen_whole_query_str(
 		query, table, get_sta_column_name,
-		"WHERE end_at > now() && start_at <= now()",
+		"WHERE end_at > now()",
 		num_col, ap
 	);
 	va_end(ap);
@@ -81,7 +81,7 @@ MYSQL_RES *dblist_chan_query_sql( const DBINFO *dbinfo, const char *table, const
 	va_start(ap, num_col);
 	gen_whole_query_str(
 		query, table, get_chan_column_name,
-		"WHERE end_at > now() && start_at <= now()",
+		"WHERE end_at > now()",
 		num_col, ap
 	);
 	va_end(ap);

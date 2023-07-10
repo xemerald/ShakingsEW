@@ -26,7 +26,7 @@ RECORD_TYPE typestr2num( const char *_typestr ) {
 
 	strcpy(ltypestr, _typestr);
 
-	for( i = 0; ltypestr[i]; i++ ) ltypestr[i] = tolower(ltypestr[i]);
+	for ( i = 0; ltypestr[i]; i++ ) ltypestr[i] = tolower(ltypestr[i]);
 
 	for ( i = RECORD_DISPLACEMENT; i < RECORD_TYPE_COUNT; i++ )
 		if ( strncmp(ltypestr, TypeString[i], strlen(TypeString[i])) == 0 ) break;

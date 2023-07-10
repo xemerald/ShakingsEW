@@ -77,14 +77,14 @@ static void         swap_double( double * );
 static int          compare_scnl( const void *, const void * );  /* qsort & bsearch */
 
 /* Globals for site-comp-net-loc filter */
-static SCNL_Filter *Lists = NULL;       /* list of SCNL's to accept & rename   */
-static int    FilterInit = 0;     /* initialization flag                    */
-static int    Max_SCNL   = 0;     /* working limit on # scnl's to ship      */
-static int    nSCNL      = 0;     /* # of scnl's we're configured to ship   */
-static int    nWild      = 0;     /* # of Wildcards used in config file     */
+static SCNL_Filter *Lists      = NULL;       /* list of SCNL's to accept & rename   */
+static int          FilterInit = 0;     /* initialization flag                    */
+static int          Max_SCNL   = 0;     /* working limit on # scnl's to ship      */
+static int          nSCNL      = 0;     /* # of scnl's we're configured to ship   */
+static int          nWild      = 0;     /* # of Wildcards used in config file     */
 /* */
-static unsigned char TypeTraceBuf;
-static unsigned char TypeTraceBuf2;   /* with Loc */
+static unsigned char TypeTraceBuf;    /* tbuf ver. 1 without Loc */
+static unsigned char TypeTraceBuf2;   /* tbuf ver. 2 with Loc */
 static unsigned char TypeTracePeak;   /* */
 /* */
 #define IS_WILD(SCNL)                 (!strcmp((SCNL), WILDCARD_STR))
@@ -502,7 +502,7 @@ void scnlfilter_end( void (*free_extra)( void * ) )
 					free_extra( current->extra );
 			}
 		}
-		free( Lists );
+		free(Lists);
 	}
 	return;
 }
@@ -564,6 +564,7 @@ static int remap_tracebuf_scnl( const SCNL_Filter *filter, TRACE_HEADER *trh )
 				memcpy(trh->net, filter->rnet, TRACE2_NET_LEN);
 				break;
 			case LOC_FILTER_BIT:
+				/* There is not location info in trace buffer ver. 1 */
 			default:
 				break;
 			}
@@ -652,7 +653,7 @@ static char *copytrim( char *dest, const char *src, const int n )
 			break;
 /* copy the remaining number of bytes to dest */
 	len = n - i;
-	memcpy( dest, src + i, len );
+	memcpy(dest, src + i, len);
 	dest[len] = '\0';
 /* DEBUG */
 /* printf( "  leading-trimmed dest: \"%s\"\n", dest ); */
@@ -767,11 +768,11 @@ static int compare_scnl( const void *s1, const void *s2 )
 	SCNL_Filter *t1 = (SCNL_Filter *)s1;
 	SCNL_Filter *t2 = (SCNL_Filter *)s2;
 
-	if ( (rc = strcmp(t1->sta, t2->sta)) )
+	if ( (rc = memcmp(t1->sta, t2->sta, TRACE2_STA_LEN)) )
 		return rc;
-	if ( (rc = strcmp(t1->chan, t2->chan)) )
+	if ( (rc = memcmp(t1->chan, t2->chan, TRACE2_CHAN_LEN)) )
 		return rc;
-	if ( (rc = strcmp(t1->net, t2->net)) )
+	if ( (rc = memcmp(t1->net, t2->net, TRACE2_NET_LEN)) )
 		return rc;
-	return rc = strcmp(t1->loc, t2->loc);
+	return rc = memcmp(t1->loc, t2->loc, TRACE2_LOC_LEN);
 }

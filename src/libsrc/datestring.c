@@ -6,13 +6,13 @@
 #include <datestring.h>
 
 /*
-	The format of the simple date string is like that "YYYYMMDDMMSS"
-	and it is terminated by the null terminator '\0'.
-*/
+ *	The format of the simple date string is like that "YYYYMMDDMMSS"
+ *	and it is terminated by the null terminator '\0'.
+ */
 
-/*************************************************************
- *  date2string( )  According to the date generate a string  *
- *************************************************************/
+/*
+ * date2string( )  According to the date generate a string  
+ */
 char *date2spstring( struct tm *source, char *dest, size_t destlength )
 {
 	char yr[5], mo[3], dy[3], hr[3], mn[3], sc[3];
@@ -33,9 +33,9 @@ char *date2spstring( struct tm *source, char *dest, size_t destlength )
 	return dest;
 }
 
-/**********************************************************************
- *  spstring2date( )  According to the string generate a tm structure *
- **********************************************************************/
+/*
+ * spstring2date( )  According to the string generate a tm structure 
+ */
 struct tm *spstring2date( struct tm *dest, char *source )
 {
 	char tmpstr[5];
