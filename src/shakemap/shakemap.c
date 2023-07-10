@@ -23,6 +23,7 @@
 #include <tracepeak.h>
 #include <triglist.h>
 #include <geogfunc.h>
+#include <polyline.h>
 #include <datestring.h>
 #include <griddata.h>
 #include <shakemap.h>
@@ -74,7 +75,6 @@ static char     OutRingName[MAX_RING_STR];  /* name of transport ring for i/o   
 static char     MyModName[MAX_MOD_STR];     /* speak as this module name/id      */
 static uint8_t  LogSwitch;                  /* 0 if no logfile should be written */
 static uint64_t HeartBeatInterval;          /* seconds between heartbeats        */
-static uint64_t UpdateInterval = 0;         /* seconds between updating check    */
 static uint64_t QueueSize = 10;             /* seconds between heartbeats        */
 static uint8_t  OutputMapToRingSwitch = 0;
 static uint16_t nLogo = 0;
@@ -82,8 +82,7 @@ static uint16_t TriggerAlgType  = 0;
 static uint16_t PeakValueType   = 0;
 static uint64_t TriggerDuration = 30;
 static char     ReportPath[MAX_PATH_STR];
-static float    *X, *Y;
-static uint32_t BoundPointCount;
+static void    *BoundPolyLine = NULL;
 static double   InterpolateDistance = 30.0;
 static DBINFO   DBInfo;
 static char     SQLStationTable[MAXLIST][MAX_TABLE_LEGTH];
@@ -108,12 +107,6 @@ static uint8_t TypeGridMap   = 0;
 #define  ERR_QUEUE         3   /* error queueing message for sending      */
 static char Text[150];         /* string for log/error messages          */
 
-/* Station list update status flag */
-#define  LIST_IS_UPDATED      0
-#define  LIST_NEED_UPDATED    1
-#define  LIST_UNDER_UPDATE    2
-
-static volatile uint8_t  UpdateStatus = LIST_IS_UPDATED;
 static volatile int32_t  ShakingMapStatus = THREAD_OFF;
 static volatile uint8_t  Finish        = 0;
 static volatile uint64_t TotalStations = 0;
@@ -132,7 +125,6 @@ int main ( int argc, char **argv )
 	time_t   time_now;           /* current time                  */
 	time_t   time_lastbeat;      /* time last heartbeat was sent  */
 	time_t   timeLastTrigger;   /* time last updated stations list */
-	time_t   time_lastupd;    /* time last updated stations list */
 	char    *lockfile;
 	int32_t  lockfile_fd;
 #if defined( _V710 )
@@ -214,8 +206,7 @@ int main ( int argc, char **argv )
 	shakemap_msgqueue_init( QueueSize, sizeof(SHAKE_LIST_ELEMENT)*TotalStations + sizeof(SHAKE_LIST_HEADER) );
 
 /* Force a heartbeat to be issued in first pass thru main loop */
-	time_lastbeat    = time(&time_now) - HeartBeatInterval - 1;
-	time_lastupd  = time(&time_now);
+	time_lastbeat   = time(&time_now) - HeartBeatInterval - 1;
 	timeLastTrigger = time_now;
 /*----------------------- setup done; start main loop -------------------------*/
 	while ( 1 ) {
@@ -224,16 +215,6 @@ int main ( int argc, char **argv )
 			time_lastbeat = time_now;
 			shakemap_status( TypeHeartBeat, 0, "" );
 		}
-	/* */
-		if (
-			UpdateInterval &&
-			UpdateStatus == LIST_NEED_UPDATED &&
-			(time_now - time_lastupd) >= (int64_t)UpdateInterval
-		) {
-			time_lastupd = time_now;
-			update_list( argv[1] );
-		}
-
 		if ( stanumber_local < TotalStations ) {
 			if ( stanumber_local ) free(slbuffer);
 			stanumber_local = TotalStations;
@@ -278,9 +259,6 @@ int main ( int argc, char **argv )
 							/* Not found in trace table */
 								//printf("shakemap: %s.%s.%s.%s not found in station table, maybe it's a new trace.\n",
 								//tracepv.sta, tracepv.chan, tracepv.net, tracepv.loc); */
-							/* Force to update the table */
-								if ( UpdateStatus == LIST_IS_UPDATED )
-									UpdateStatus = LIST_NEED_UPDATED;
 								continue;
 							}
 
@@ -394,9 +372,6 @@ int main ( int argc, char **argv )
 					/* Not found in trace table */
 						//printf("shakemap: %s.%s.%s.%s not found in station table, maybe it's a new station.\n",
 						//tracepv.sta, tracepv.chan, tracepv.net, tracepv.loc); */
-					/* Force to update the table */
-						if ( UpdateStatus == LIST_IS_UPDATED )
-							UpdateStatus = LIST_NEED_UPDATED;
 						continue;
 					}
 				/* Insert the triggered station pointer to the trigger list */
@@ -471,27 +446,27 @@ static void shakemap_config( char *configfile )
  * Process all command files
  * While there are command files open
  */
-   	while ( nfiles > 0 ) {
-   	/* Read next line from active file  */
-   		while ( k_rd() ) {
-   		/* Get the first token from line */
-   			com = k_str();
-   		/* Ignore blank lines & comments */
-   			if ( !com )
-   				continue;
-   			if ( com[0] == '#' )
-   				continue;
+	while ( nfiles > 0 ) {
+	/* Read next line from active file  */
+		while ( k_rd() ) {
+		/* Get the first token from line */
+			com = k_str();
+		/* Ignore blank lines & comments */
+			if ( !com )
+				continue;
+			if ( com[0] == '#' )
+				continue;
 
-   		/* Open a nested configuration file */
-   			if ( com[0] == '@' ) {
-   				success = nfiles+1;
-   				nfiles  = k_open(&com[1]);
-   				if ( nfiles != success ) {
-   					logit("e", "shakemap: Error opening command file <%s>; exiting!\n", &com[1]);
-   					exit(-1);
-   				}
-   				continue;
-   			}
+		/* Open a nested configuration file */
+			if ( com[0] == '@' ) {
+				success = nfiles+1;
+				nfiles  = k_open(&com[1]);
+				if ( nfiles != success ) {
+					logit("e", "shakemap: Error opening command file <%s>; exiting!\n", &com[1]);
+					exit(-1);
+				}
+				continue;
+			}
 
 		/* Process anything else as a command */
 		/* 0 */
@@ -530,14 +505,6 @@ static void shakemap_config( char *configfile )
 			else if ( k_its("HeartBeatInterval") ) {
 				HeartBeatInterval = k_long();
 				init[4] = 1;
-			}
-			else if ( k_its("UpdateInterval") ) {
-				UpdateInterval = k_long();
-				if ( UpdateInterval )
-					logit(
-						"o", "shakemap: Change to auto updating mode, the updating interval is %ld seconds!\n",
-						UpdateInterval
-					);
 			}
 			else if ( k_its("QueueSize") ) {
 				QueueSize = k_long();
@@ -582,42 +549,13 @@ static void shakemap_config( char *configfile )
 				}
 				init[8] = 1;
 			}
-		/* 9 */
 			else if ( k_its("MapBoundFile") ) {
-				str = k_str();
-				if ( str ) {
-					FILE *filebound;
-
-					if ( (filebound = fopen(str, "r")) == NULL ) {
-						logit("e", "shakemap: Error opening map boundary file %s!\n", str);
+				if ( (str = k_str()) ) {
+					if ( polyline_read( &BoundPolyLine, str ) ) {
+						logit("e", "shakemap: Reading boundary file(%s) error. Exiting!\n", str);
 						exit(-1);
 					}
-					else {
-						int   count = 0;
-						float tmpx, tmpy;
-
-						while( fscanf(filebound, "%f %f", &tmpx, &tmpy) == 2 ) count++;
-
-						if ( count > 2 ) {
-							X = (float *)calloc(count, sizeof(float));
-							Y = (float *)calloc(count, sizeof(float));
-
-							BoundPointCount = count;
-							count = 0;
-
-							rewind(filebound);
-							while( fscanf(filebound,"%f %f", &X[count], &Y[count]) == 2 ) count++;
-						}
-						else {
-							logit("e", "shakemap: Map boundary file contains not enough point, exiting!\n");
-							exit(-1);
-						}
-
-						fclose(filebound);
-						logit("o", "shakemap: Reading map boundary file finish. Total %d points\n", BoundPointCount);
-					}
 				}
-				init[9] = 1;
 			}
 			else if ( k_its("SQLHost") ) {
 				str = k_str();
@@ -740,7 +678,6 @@ static void shakemap_config( char *configfile )
 		if ( !init[5] )  logit("e", "<TriggerAlgType> "     );
 		if ( !init[6] )  logit("e", "<PeakValueType> "      );
 		if ( !init[8] )  logit("e", "<ReportPath> "         );
-		if ( !init[9] )  logit("e", "<MapBoundFile> "       );
 		if ( !init[10] ) logit("e", "any <GetEventsFrom> "  );
 		if ( !init[11] ) logit("e", "<SQLPort> "            );
 		if ( !init[12] ) logit("e", "<SQLUser> "            );
@@ -870,115 +807,6 @@ static void shakemap_end( void )
 	return;
 }
 
-/*
- * update_list() -
- */
-static void update_list( void *arg )
-{
-	int i;
-	int update_flag = 0;
-
-	logit("ot", "shakemap: Updating the stations list...\n");
-	UpdateStatus = LIST_UNDER_UPDATE;
-/* */
-	for ( i = 0; i < nList; i++ ) {
-		if ( shakemap_list_db_fetch( SQLStationTable[i], &DBInfo, SHAKEMAP_LIST_UPDATING ) < 0 ) {
-			logit("e", "shakemap: Fetching stations list(%s) from remote database error!\n", SQLStationTable[i]);
-			update_flag = 1;
-		}
-	}
-/* */
-	if ( update_list_configfile( (char *)arg ) ) {
-		logit("e", "shakemap: Fetching stations list from local file error!\n");
-		update_flag = 1;
-	}
-/* */
-	if ( update_flag ) {
-		shakemap_list_tree_abandon();
-		logit("e", "shakemap: Failed to update the stations list!\n");
-		logit("ot", "shakemap: Keep using the previous stations list(%ld)!\n", shakemap_list_timestamp_get());
-	}
-	else {
-		shakemap_list_tree_activate();
-		logit("ot", "shakemap: Successfully updated the stations list(%ld)!\n", shakemap_list_timestamp_get());
-		logit(
-			"ot", "shakemap: There are total %d stations in the new stations list.\n", shakemap_list_total_station_get()
-		);
-	}
-
-/* */
-	UpdateStatus = LIST_IS_UPDATED;
-
-	return;
-}
-
-/*
- *
- */
-static int update_list_configfile( char *configfile )
-{
-	char *com;
-	char *str;
-	int   nfiles;
-	int   success;
-
-/* Open the main configuration file */
-	nfiles = k_open(configfile);
-	if ( nfiles == 0 ) {
-		logit("e","shakemap: Error opening command file <%s> when updating!\n", configfile);
-		return -1;
-	}
-
-/*
- * Process all command files
- * While there are command files open
- */
-   	while ( nfiles > 0 ) {
-   	/* Read next line from active file  */
-   		while ( k_rd() ) {
-   		/* Get the first token from line */
-   			com = k_str();
-   		/* Ignore blank lines & comments */
-   			if ( !com )
-   				continue;
-   			if ( com[0] == '#' )
-   				continue;
-
-   		/* Open a nested configuration file */
-   			if ( com[0] == '@' ) {
-   				success = nfiles+1;
-   				nfiles  = k_open(&com[1]);
-   				if ( nfiles != success ) {
-					logit("e", "shakemap: Error opening command file <%s> when updating!\n", &com[1]);
-					return -1;
-   				}
-   				continue;
-   			}
-
-		/* Process only "Station" command */
-			if ( k_its("Station") ) {
-				str = k_get();
-				for ( str += strlen(str) + 1; isspace(*str); str++ );
-				if ( shakemap_list_sta_line_parse( str, SHAKEMAP_LIST_UPDATING ) ) {
-					logit(
-						"e", "shakemap: Some errors occured in <%s> when updating!\n",
-						configfile
-					);
-					return -1;
-				}
-			}
-		/* See if there were any errors processing the command */
-			if ( k_err() ) {
-			   logit("e", "shakemap: Bad <%s> command in <%s> when updating!\n", com, configfile);
-			   return -1;
-			}
-		}
-		nfiles = k_close();
-	}
-
-	return 0;
-}
-
 /******************************************************************************
  * thread_shakingmap() Read the station info from the array <stainfo>. And creates   *
  *              the table of shakemap of Taiwan.                              *
@@ -1078,7 +906,7 @@ static thr_ret thread_shakingmap ( void *dummy )
 			/* Latitude */
 				for ( tmplat = latmin; tmplat <= latmax; tmplat += 0.05 ) {
 				/* Check if inside the given boundary */
-					if ( locpt((float)tmplon, (float)tmplat, X, Y, BoundPointCount, &mm) > -1 ) {
+					if ( !BoundPolyLine || polyline_locpt_all((float)tmplon, (float)tmplat, BoundPolyLine, &mm) > -1 ) {
 					/* Using the inverse distance weighting method to calculate the value of each grid */
 						dissum = 0.0;
 						valsum = 0.0;
