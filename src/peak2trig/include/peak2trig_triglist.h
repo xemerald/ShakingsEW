@@ -11,7 +11,7 @@
 /* */
 #define CLUSTER_NUM 2
 
-typedef struct sta_node {
+typedef struct trig_sta {
 	_STAINFO        *staptr;
 
 	uint16_t         padding;
@@ -20,15 +20,14 @@ typedef struct sta_node {
 	double           peakvalue;
 	double           peaktime;
 
-	struct sta_node *cluster[CLUSTER_NUM];
-	struct sta_node *next;
-} STA_NODE;
+	struct trig_sta *cluster[CLUSTER_NUM];
+} TRIG_STA;
 
 /* Function prototype */
-STA_NODE *peak2trig_tlist_insert( const _STAINFO * );
-STA_NODE *peak2trig_tlist_find( const _STAINFO * );
-STA_NODE *peak2trig_tlist_delete( const _STAINFO * );
-STA_NODE *peak2trig_tlist_update( const TRACE_PEAKVALUE *, STA_NODE * );
+TRIG_STA *peak2trig_tlist_insert( const _STAINFO * );
+TRIG_STA *peak2trig_tlist_find( const _STAINFO * );
+TRIG_STA *peak2trig_tlist_delete( const _STAINFO * );
+TRIG_STA *peak2trig_tlist_update( const TRACE_PEAKVALUE *, TRIG_STA * );
 
 int  peak2trig_tlist_len_get( void );
 int  peak2trig_tlist_cluster( const double, const double );

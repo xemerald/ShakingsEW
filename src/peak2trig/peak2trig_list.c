@@ -9,6 +9,7 @@
 #include <ctype.h>
 /* Earthworm environment header include */
 #include <earthworm.h>
+#include <trace_buf.h>
 /* Local header include */
 #include <dblist.h>
 #include <dl_chain_list.h>

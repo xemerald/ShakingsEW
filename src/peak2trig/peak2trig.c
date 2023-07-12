@@ -107,7 +107,7 @@ int main ( int argc, char **argv )
 	int32_t  lockfile_fd;
 
 	_STAINFO       *staptr    = NULL;
-	STA_NODE       *targetsta = NULL;
+	TRIG_STA       *targetsta = NULL;
 	TRACE_PEAKVALUE tracepv;
 	TrigListPacket  obuffer;
 
@@ -235,67 +235,60 @@ int main ( int argc, char **argv )
 
 		/* Process the message */
 			if ( reclogo.type == TypeTracePeak ) {
-				if ( tracepv.recordtype == RecordTypeToTrig ) {
-					if ( (tracepv.peakvalue = fabs(tracepv.peakvalue)) >= PeakThreshold ) {
-					/* Debug */
-						//printf("peak2trig: Got a new trace peak from %s.%s.%s.%s!\n",
+				if ( tracepv.recordtype == RecordTypeToTrig && (tracepv.peakvalue = fabs(tracepv.peakvalue)) >= PeakThreshold ) {
+				/* Debug */
+					//printf("peak2trig: Got a new trace peak from %s.%s.%s.%s!\n",
+					//tracepv.sta, tracepv.chan, tracepv.net, tracepv.loc);
+					if ( (staptr = peak2trig_list_find( &tracepv )) == NULL ) {
+					/* Not found in trace table */
+						//printf("peak2trig: %s.%s.%s.%s not found in station table, maybe it's a new station.\n",
 						//tracepv.sta, tracepv.chan, tracepv.net, tracepv.loc);
+					/* Force to update the table */
+						if ( UpdateStatus == LIST_IS_UPDATED )
+							UpdateStatus = LIST_NEED_UPDATED;
+						continue;
+					}
+				/* Insert the triggered station pointer to the trigger list */
+					if ( (targetsta = peak2trig_tlist_insert( staptr )) == NULL ) {
+						logit( "e","peak2trig: Error insert station %s into trigger list.\n", staptr->sta );
+						continue;
+					}
 
-						if ( (staptr = peak2trig_list_find( &tracepv )) == NULL ) {
-						/* Not found in trace table */
-							//printf("peak2trig: %s.%s.%s.%s not found in station table, maybe it's a new station.\n",
-							//tracepv.sta, tracepv.chan, tracepv.net, tracepv.loc);
-						/* Force to update the table */
-							if ( UpdateStatus == LIST_IS_UPDATED )
-								UpdateStatus = LIST_NEED_UPDATED;
-							continue;
-						}
-					/* Insert the triggered station pointer to the trigger list */
-						if ( (targetsta = peak2trig_tlist_insert( staptr )) == NULL ) {
-							logit( "e","peak2trig: Error insert station %s into trigger list.\n", staptr->sta );
-							continue;
-						}
+					peak2trig_tlist_update( &tracepv, targetsta );
 
-						peak2trig_tlist_update( &tracepv, targetsta );
-
-						if ( (time(&time_now) - time_lasttrig) >= TriggerTimeInterval ) {
-						/* Check if the length of trigger list is larger than cluster threshold */
-							if ( peak2trig_tlist_len_get() > (int)CLUSTER_NUM ) {
-							/* Do the cluster with the input condition(ex: distance & time gap) */
-								if ( peak2trig_tlist_cluster( ClusterDistance, ClusterTimeGap ) >= TriggerStations ) {
-								/* The triggered stations is over the threshold and issue the triggered message */
-									msg_size =
-										peak2trig_tlist_pack(
-											obuffer.msg, MAX_TRIGLIST_SIZ,
-											evflag ?  PEAK2TRIG_FOLLOW_TRIG : PEAK2TRIG_FIRST_TRIG
-										);
-									if ( msg_size > 0 ) {
-									/* Since there is still new station detecting peak value higher than threshold, the event should be undergoing */
-										obuffer.tlh.codaflag = NO_CODA;
-										obuffer.tlh.trigtype = TRIG_BY_PEAK_CLUSTER;
-									/* */
-										if ( evflag ) {
-										/* Following detection */
-											logit(
-												"ot", "peak2trig: During detected possible event last for %.1lfs, total triggered stations for now are %d!\n",
-												obuffer.tlh.trigtime - obuffer.tlh.origintime, obuffer.tlh.trigstations
-											);
-										}
-										else {
-										/* First detection */
-											logit("ot", "peak2trig: First detected possible event!! Total triggered stations are %d!\n", obuffer.tlh.trigstations);
-											evflag = TRUE;
-										}
-									/* */
-										if ( tport_putmsg(&OutRegion, &Putlogo, msg_size, (char *)obuffer.msg) != PUT_OK )
-											logit("e", "peak2trig: Error putting message in region %ld\n", OutRegion.key);
-									}
-									time_lasttrig = time_now;
+					if ( (time(&time_now) - time_lasttrig) >= TriggerTimeInterval ) {
+					/* Check if the length of trigger list is larger than cluster threshold & Do the cluster with the input condition(ex: distance & time gap) */
+						if ( peak2trig_tlist_len_get() > (int)CLUSTER_NUM && peak2trig_tlist_cluster( ClusterDistance, ClusterTimeGap ) >= TriggerStations ) {
+						/* The triggered stations is over the threshold and issue the triggered message */
+							msg_size = peak2trig_tlist_pack(
+								obuffer.msg, MAX_TRIGLIST_SIZ,
+								evflag ?  PEAK2TRIG_FOLLOW_TRIG : PEAK2TRIG_FIRST_TRIG
+							);
+							if ( msg_size > 0 ) {
+							/* Since there is still new station detecting peak value higher than threshold, the event should be undergoing */
+								obuffer.tlh.codaflag = NO_CODA;
+								obuffer.tlh.trigtype = TRIG_BY_PEAK_CLUSTER;
+							/* */
+								if ( evflag == PEAK2TRIG_FOLLOW_TRIG ) {
+								/* Following detection */
+									logit(
+										"ot", "peak2trig: Following detected possible event last for %.1lfs, total triggered stations for now are %d!\n",
+										obuffer.tlh.trigtime - obuffer.tlh.origintime, obuffer.tlh.trigstations
+									);
 								}
+								else {
+								/* First detection */
+									logit("ot", "peak2trig: First detected possible event!! Total triggered stations are %d!\n", obuffer.tlh.trigstations);
+									evflag = TRUE;
+								}
+							/* */
+								if ( tport_putmsg(&OutRegion, &Putlogo, msg_size, (char *)obuffer.msg) != PUT_OK )
+									logit("e", "peak2trig: Error putting message in region %ld\n", OutRegion.key);
 							}
+							time_lasttrig = time_now;
 						}
-					}  /* tracepv.peakvalue >= PeakThreshold */
-				}  /* tracepv.recordtype == RecordTypeToTrig */
+					}
+				}  /* /* tracepv.recordtype == RecordTypeToTrig && tracepv.peakvalue >= PeakThreshold */
 			}  /* reclogo.type == TypeTracePeak */
 
 			if ( evflag && (time(&time_now) - time_lasttrig) > PeakDuration ) {
@@ -320,7 +313,7 @@ int main ( int argc, char **argv )
 		} while ( 1 );  /* end of message-processing-loop */
 	/* Do the filter to remove the stations which are obsolete */
 		peak2trig_tlist_time_filter( PeakDuration );
-		sleep_ew( 50 );  /* no more messages; wait for new ones to arrive */
+		sleep_ew(50);  /* no more messages; wait for new ones to arrive */
 	}
 /*-----------------------------end of main loop-------------------------------*/
 exit_procedure:
