@@ -17,9 +17,9 @@
 #define CF2TRA_INFO_FROM_SQL  6
 /* */
 #define CF2TRA_FLOAT_PRECISION_TABLE \
-		X(CF2TRA_FLOAT_SINGLE,  "single"          ) \
-		X(CF2TRA_FLOAT_DOUBLE,  "double"          ) \
-		X(CF2TRA_FLOAT_COUNT,   "NULL"            )
+		X(CF2TRA_FLOAT_SINGLE, "single" ) \
+		X(CF2TRA_FLOAT_DOUBLE, "double" ) \
+		X(CF2TRA_FLOAT_COUNT,  "NULL"   )
 
 #define X(a, b) a,
 typedef enum {
