@@ -15,6 +15,18 @@
 #include <trace_buf.h>
 /* */
 #define CF2TRA_INFO_FROM_SQL  6
+/* */
+#define CF2TRA_FLOAT_PRECISION_TABLE \
+		X(CF2TRA_FLOAT_SINGLE,  "single"          ) \
+		X(CF2TRA_FLOAT_DOUBLE,  "double"          ) \
+		X(CF2TRA_FLOAT_COUNT,   "NULL"            )
+
+#define X(a, b) a,
+typedef enum {
+	CF2TRA_FLOAT_PRECISION_TABLE
+} CF2TRA_FLOAT_PRECISION_LIST;
+#undef X
+
 /* Trace info related struct */
 typedef struct {
 	uint16_t seq;
@@ -25,5 +37,5 @@ typedef struct {
 	char loc[TRACE2_LOC_LEN];
 	char chan[TRACE2_CHAN_LEN];
 
-	float conversion_factor;
+	double conversion_factor;
 } _TRACEINFO;

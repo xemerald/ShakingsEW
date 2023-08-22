@@ -15,6 +15,8 @@ UpdateInterval     0              # setting for automatical updating interval (s
                                   # parameter larger than 0, the program will update the channels'
                                   # list with this interval; or the program will ignore the incoming
                                   # new trace.
+FloatPrecision     double         # Adjust the output floating data precision (ref. IEEE 754), it can switch between 'single' & 'double'
+
 # MySQL server information:
 #
 # If you setup the follow parameter especially SQLHost, this program will fetch

@@ -28,9 +28,10 @@ static void cf2trace_lookup( void );
 static void cf2trace_status( unsigned char, short, char * );
 static void cf2trace_end( void );                /* Free all the local memory & close socket */
 
-static thr_ret thread_update_list ( void * );
-static int     update_list_configfile( char * );
-static float  *apply_cf_tracedata( TRACE2X_HEADER *, const TRACE2X_HEADER *, const float );
+static thr_ret thread_update_list( void * );
+static int update_list_configfile( char * );
+static int apply_cf_tracedata_single( TracePacket *, const TracePacket *, const double );
+static int apply_cf_tracedata_double( TracePacket *, const TracePacket *, const double );
 
 /* Ring messages things */
 static SHM_INFO InRegion;      /* shared memory region to use for i/o    */
@@ -56,6 +57,7 @@ static char     MyModName[MAX_MOD_STR];     /* speak as this module name/id     
 static uint8_t  LogSwitch;                  /* 0 if no logfile should be written */
 static uint64_t HeartBeatInterval;          /* seconds between heartbeats        */
 static uint64_t UpdateInterval = 0;         /* seconds between updating check    */
+static uint8_t  FloatPrecision = CF2TRA_FLOAT_SINGLE;  /* */
 static uint16_t nLogo = 0;
 static DBINFO   DBInfo;
 static char     SQLChannelTable[MAXLIST][MAX_TABLE_LEGTH];
@@ -85,6 +87,13 @@ static char Text[150];         /* string for log/error messages          */
 
 static volatile uint8_t UpdateStatus = LIST_IS_UPDATED;
 
+#define RE_ARRANGE_TRACEDATA(_TRACE_PACKET_PTR, DROP_NSAMP, REST_NSAMP) \
+		memmove( \
+			&(_TRACE_PACKET_PTR)->trh2 + 1, \
+			(uint8_t *)(&(_TRACE_PACKET_PTR)->trh2 + 1) + ((_TRACE_PACKET_PTR)->trh2.datatype[1] - '0') * (DROP_NSAMP), \
+			((_TRACE_PACKET_PTR)->trh2.datatype[1] - '0') * (REST_NSAMP) \
+		)
+
 /*
  *
  */
@@ -108,6 +117,7 @@ int main ( int argc, char **argv )
 #else
 	unsigned    tid;            /* Thread ID */
 #endif
+	int (*apply_cf_func)( TracePacket *, const TracePacket *, const double );
 
 /* Check command line arguments */
 	if ( argc != 2 ) {
@@ -166,6 +176,8 @@ int main ( int argc, char **argv )
 
 /* Force a heartbeat to be issued in first pass thru main loop */
 	time_lastupd = time_lastbeat = time(&time_now) - HeartBeatInterval - 1;
+/* Assign the apply function pointer according to float precision */
+	apply_cf_func = FloatPrecision == CF2TRA_FLOAT_DOUBLE ? apply_cf_tracedata_double : apply_cf_tracedata_single;
 /*----------------------- setup done; start main loop -------------------------*/
 	while ( 1 ) {
 	/* Send cf2trace's heartbeat */
@@ -276,10 +288,10 @@ int main ( int argc, char **argv )
 			/* Copy all the header data into the output buffer */
 				memcpy(tracebuffer_o.msg, tracebuffer_i.msg, sizeof(TRACE2X_HEADER));
 			/* Temporally use this space to store the record type*/
-				tracebuffer_o.trh2x.pinno                   = traceptr->recordtype; 
+				tracebuffer_o.trh2x.pinno                   = traceptr->recordtype;
 				tracebuffer_o.trh2x.x.v21.conversion_factor = traceptr->conversion_factor;
 			/* */
-				tracebuffer_o.trh2x.datatype[1] = '4';
+				tracebuffer_o.trh2x.datatype[1] = FloatPrecision == CF2TRA_FLOAT_DOUBLE ? '8' : '4';
 				tracebuffer_o.trh2x.datatype[2] = '\0';
 #if defined( _SPARC )
 				tracebuffer_o.trh2x.datatype[0] = 't';      /* SUN IEEE single precision real */
@@ -289,10 +301,23 @@ int main ( int argc, char **argv )
 				printf("cf2trace: WARNING! _INTEL and _SPARC are both undefined!\n");
 #endif
 			/* */
-				apply_cf_tracedata( &tracebuffer_o.trh2x, &tracebuffer_i.trh2x, traceptr->conversion_factor );
-			/* */
-				if ( tport_putmsg( &OutRegion, &Putlogo, recsize, tracebuffer_o.msg ) != PUT_OK )
-					logit("e", "cf2trace: Error putting message in region %ld\n", OutRegion.key);
+				do {
+				/* Output buffer part */
+					tracebuffer_o.trh2x.nsamp   = apply_cf_func( &tracebuffer_o, &tracebuffer_i, traceptr->conversion_factor );
+					tracebuffer_o.trh2x.endtime = tracebuffer_o.trh2x.starttime + 1.0 * tracebuffer_o.trh2x.nsamp / tracebuffer_o.trh2x.samprate;
+				/* */
+					if ( tport_putmsg( &OutRegion, &Putlogo, recsize, tracebuffer_o.msg ) != PUT_OK )
+						logit("e", "cf2trace: Error putting message in region %ld\n", OutRegion.key);
+				/* */
+					if ( tracebuffer_o.trh2x.nsamp < tracebuffer_i.trh2.nsamp ) {
+					/* Source buffer part */
+						tracebuffer_i.trh2.nsamp    -= tracebuffer_o.trh2x.nsamp;
+						tracebuffer_i.trh2.starttime = tracebuffer_o.trh2x.endtime + 1.0 / tracebuffer_i.trh2.samprate;
+						RE_ARRANGE_TRACEDATA(&tracebuffer_i, tracebuffer_o.trh2x.nsamp, tracebuffer_i.trh2.nsamp);
+					/* */
+						tracebuffer_o.trh2.starttime = tracebuffer_i.trh2.starttime;
+					}
+				} while ( res > 0 );
 			}
 		} while ( 1 );  /* end of message-processing-loop */
 		sleep_ew(50);  /* no more messages; wait for new ones to arrive */
@@ -404,6 +429,31 @@ static void cf2trace_config( char *configfile )
 						"o", "cf2trace: Change to auto updating mode, the updating interval is %ld seconds!\n",
 						UpdateInterval
 					);
+			}
+			else if ( k_its("FloatPrecision") ) {
+				str = k_str();
+				if ( str ) {
+					char typestr[8];
+				#define X(a, b) b,
+					char *_typestr[] = {
+						CF2TRA_FLOAT_PRECISION_TABLE
+					};
+				#undef X
+					memcpy(typestr, str, 8);
+					for ( i = 0; i < 8; i++ )
+						typestr[i] = tolower(typestr[i]);
+				/* Compare the type string */
+					for ( i = 0; i < CF2TRA_FLOAT_COUNT; i++ ) {
+						if ( !memcmp(typestr, _typestr[i], strlen(_typestr[i])) ) {
+							FloatPrecision = i;
+							break;
+						}
+					}
+					if ( i >= CF2TRA_FLOAT_COUNT ) {
+						logit("e", "respectra: Invalid output float precision <%s>", str);
+						logit("e", " in <FloatPrecision> cmd; use default setting!\n");
+					}
+				}
 			}
 			else if ( k_its("SQLHost") ) {
 				str = k_str();
@@ -745,30 +795,82 @@ static int update_list_configfile( char *configfile )
 /*
  *
  */
-static float *apply_cf_tracedata( TRACE2X_HEADER *dest, const TRACE2X_HEADER *src, const float cfactor )
+static int apply_cf_tracedata_single( TracePacket *dest, const TracePacket *src, const double cfactor )
 {
-	float         *tdata_f = (float *)(dest + 1);
-	const int32_t *tdata_i;
-	const int32_t *tdata_iend;
-	const int16_t *tdata_s;
-	const int16_t *tdata_send;
+	float         *destdata_f = (float *)(&dest->trh2x + 1);
+	float         *destdata_fend = (float *)(&dest->msg[MAX_TRACEBUF_SIZ]);
+	const int32_t *srcdata_i;
+	const int32_t *srcdata_iend;
+	const int16_t *srcdata_s;
+	const int16_t *srcdata_send;
+	int            dest_nsamp = 0;
 
 /* */
-	if ( src->datatype[1] == '4' ) {
-		tdata_i    = (int32_t *)(src + 1);
-		tdata_iend = tdata_i + src->nsamp;
+	if ( dest == src )
+		return -1;
+/* */
+	if ( src->trh2.datatype[1] == '4' ) {
+		srcdata_i    = (int32_t *)(&src->trh2 + 1);
+		srcdata_iend = srcdata_i + src->trh2.nsamp;
 	/* */
-		for ( ; tdata_i < tdata_iend; tdata_i++, tdata_f++ )
-			*tdata_f = *tdata_i * cfactor;
+		for ( ; srcdata_i < srcdata_iend && destdata_f < destdata_fend; srcdata_i++, destdata_f++ ) {
+			*destdata_f = *srcdata_i * cfactor;
+			dest_nsamp++;
+		}
+	/* Following condition might never happen */
+		if ( srcdata_i < srcdata_iend )
+			return srcdata_i - (int32_t *)(&src->trh2 + 1);
 	}
 /* */
-	else if ( src->datatype[1] == '2' ) {
-		tdata_s    = (int16_t *)(src + 1);
-		tdata_send = tdata_s + src->nsamp;
+	else if ( src->trh2.datatype[1] == '2' ) {
+		srcdata_s    = (int16_t *)(&src->trh2 + 1);
+		srcdata_send = srcdata_s + src->trh2.nsamp;
 	/* */
-		for ( ; tdata_s < tdata_send; tdata_s++, tdata_f++ )
-			*tdata_f = *tdata_s * cfactor;
+		for ( ; srcdata_s < srcdata_send && destdata_f < destdata_fend; srcdata_s++, destdata_f++ ) {
+			*destdata_f = *srcdata_s * cfactor;
+			dest_nsamp++;
+		}
 	}
 
-	return (float *)(dest + 1);
+	return dest_nsamp;
+}
+
+/*
+ *
+ */
+static int apply_cf_tracedata_double( TracePacket *dest, const TracePacket *src, const double cfactor )
+{
+	double        *destdata_d = (double *)(&dest->trh2x + 1);
+	double        *destdata_dend = (double *)(&dest->msg[MAX_TRACEBUF_SIZ]);
+	const int32_t *srcdata_i;
+	const int32_t *srcdata_iend;
+	const int16_t *srcdata_s;
+	const int16_t *srcdata_send;
+	int            dest_nsamp = 0;
+
+/* */
+	if ( dest == src )
+		return -1;
+/* */
+	if ( src->trh2.datatype[1] == '4' ) {
+		srcdata_i    = (int32_t *)(&src->trh2 + 1);
+		srcdata_iend = srcdata_i + src->trh2.nsamp;
+	/* */
+		for ( ; srcdata_i < srcdata_iend && destdata_d < destdata_dend; srcdata_i++, destdata_d++ ) {
+			*destdata_d = *srcdata_i * cfactor;
+			dest_nsamp++;
+		}
+	}
+/* */
+	else if ( src->trh2.datatype[1] == '2' ) {
+		srcdata_s    = (int16_t *)(&src->trh2 + 1);
+		srcdata_send = srcdata_s + src->trh2.nsamp;
+	/* */
+		for ( ; srcdata_s < srcdata_send && destdata_d < destdata_dend; srcdata_s++, destdata_d++ ) {
+			*destdata_d = *srcdata_s * cfactor;
+			dest_nsamp++;
+		}
+	}
+
+	return dest_nsamp;
 }

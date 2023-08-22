@@ -33,15 +33,15 @@ static void        dummy_func( void * );
 static _TRACEINFO *update_traceinfo( _TRACEINFO *, const _TRACEINFO * );
 static _TRACEINFO *append_traceinfo_list( TraceList *, _TRACEINFO *, const int );
 static _TRACEINFO *create_new_traceinfo(
-	const char *, const char *, const char *, const char *, const uint8_t, const float
+	const char *, const char *, const char *, const char *, const uint8_t, const double
 );
 static _TRACEINFO *enrich_traceinfo_raw(
-	_TRACEINFO *, const char *, const char *, const char *, const char *, const uint8_t, const float
+	_TRACEINFO *, const char *, const char *, const char *, const char *, const uint8_t, const double
 );
 /* */
 #if defined( _USE_SQL )
 static void extract_traceinfo_mysql(
-	char *, char *, char *, char *, uint8_t *, float *, const MYSQL_ROW, const unsigned long []
+	char *, char *, char *, char *, uint8_t *, double *, const MYSQL_ROW, const unsigned long []
 );
 #endif
 /* */
@@ -78,7 +78,7 @@ int cf2tra_list_chan_line_parse( const char *line, const int update )
 	char    chan[TRACE2_CHAN_LEN] = { 0 };
 	char    typestr[TYPE_STR_LEN] = { 0 };
 	uint8_t rtype = 0;
-	float   cfactor;
+	double  cfactor;
 
 /* */
 	if ( !TList ) {
@@ -89,7 +89,7 @@ int cf2tra_list_chan_line_parse( const char *line, const int update )
 		}
 	}
 /* */
-	if ( sscanf(line, "%s %s %s %s %s %f", sta, net, loc, chan, typestr, &cfactor) >= 6 ) {
+	if ( sscanf(line, "%s %s %s %s %s %lf", sta, net, loc, chan, typestr, &cfactor) >= 6 ) {
 	/* */
 		rtype = typestr2num( typestr );
 		if ( append_traceinfo_list( TList, create_new_traceinfo( sta, net, loc, chan, rtype, cfactor ), update ) == NULL )
@@ -209,7 +209,7 @@ static int fetch_list_sql( TraceList *list, const char *table_chan, const DBINFO
 	char    loc[TRACE2_LOC_LEN] = { 0 };
 	char    chan[TRACE2_CHAN_LEN] = { 0 };
 	uint8_t rtype;
-	float   cfactor;
+	double  cfactor;
 
 	MYSQL_RES *sql_res = NULL;
 	MYSQL_ROW  sql_row;
@@ -264,7 +264,7 @@ static int fetch_list_sql( TraceList *list, const char *table_chan, const DBINFO
  * extract_traceinfo_mysql() -
  */
 static void extract_traceinfo_mysql(
-	char *sta, char *net, char *loc, char *chan, uint8_t *rtype, float *cfactor,
+	char *sta, char *net, char *loc, char *chan, uint8_t *rtype, double *cfactor,
 	const MYSQL_ROW sql_row, const unsigned long row_lengths[]
 ) {
 	char _str[32] = { 0 };
@@ -375,7 +375,7 @@ except:
  *  create_new_traceinfo() - Creating new channel info memory space with the input value.
  */
 static _TRACEINFO *create_new_traceinfo(
-	const char *sta, const char *net, const char *loc, const char *chan, const uint8_t rtype, const float cfactor
+	const char *sta, const char *net, const char *loc, const char *chan, const uint8_t rtype, const double cfactor
 ) {
 	_TRACEINFO *result = (_TRACEINFO *)calloc(1, sizeof(_TRACEINFO));
 
@@ -391,7 +391,7 @@ static _TRACEINFO *create_new_traceinfo(
  */
 static _TRACEINFO *enrich_traceinfo_raw(
 	_TRACEINFO *traceinfo, const char *sta, const char *net, const char *loc, const char *chan,
-	const uint8_t rtype, const float cfactor
+	const uint8_t rtype, const double cfactor
 ) {
 /* */
 	memcpy(traceinfo->sta, sta, TRACE2_STA_LEN);
