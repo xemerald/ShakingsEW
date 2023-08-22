@@ -67,6 +67,9 @@ static uint8_t TypeTracePeak = 0;
 #define  ERR_QUEUE         3   /* error queueing message for sending      */
 static char Text[150];         /* string for log/error messages          */
 
+#define FOR_EACH_TRACE_DATA(__DATAPTR, __DATAPTR_END, __DATA_NSAMP, __DATA_PTR_TYPE) \
+		for ( (__DATAPTR_END) = (__DATA_PTR_TYPE)(__DATAPTR) + (__DATA_NSAMP); (__DATAPTR) < (__DATAPTR_END); (__DATAPTR) = (__DATA_PTR_TYPE)(__DATAPTR) + 1 )
+
 /*
  *
  */
@@ -83,8 +86,8 @@ int main ( int argc, char **argv )
 
 	_TRACEPEAK *traceptr;
 	TracePacket tracebuffer;  /* message which is sent to share ring    */
-	float      *tracedata_f;
-	float      *tracedata_end;
+	void       *dataptr;
+	void       *dataptr_end;
 	double      peak_value;
 	double      peak_time;
 	double      tmp_time;
@@ -218,9 +221,10 @@ int main ( int argc, char **argv )
 					!(traceptr = tra2peak_list_find( &tracebuffer.trh2x )) &&
 					!scnlfilter_trace_apply( tracebuffer.msg, reclogo.type, &_match )
 				) {
-				/* Debug */
-					//printf("trace2peak: Found SCNL %s.%s.%s.%s but not in the filter, drop it!\n",
-					//tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc);
+				#ifdef _DEBUG
+					printf("trace2peak: Found SCNL %s.%s.%s.%s but not in the filter, drop it!\n",
+					tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc);
+				#endif
 					continue;
 				}
 			/* */
@@ -270,15 +274,17 @@ int main ( int argc, char **argv )
 			/* Start processing the gap in trace */
 				if ( fabs(tmp_time = tracebuffer.trh2x.starttime - traceptr->lasttime) > traceptr->delta * 2.0 ) {
 					if ( (long)tracebuffer.trh2x.starttime > (time(&timeNow) + 3) ) {
-					/* Debug */
-						//printf( "trace2peak: %s.%s.%s.%s NTP sync error, drop it!\n",
-						//tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc ); */
+					#ifdef _DEBUG
+						printf( "trace2peak: %s.%s.%s.%s NTP sync error, drop it!\n",
+						tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc );
+					#endif
 						continue;
 					}
 					else if ( tmp_time < 0.0 ) {
-					/* Debug */
-						//printf( "trace2peak: Overlapped in %s.%s.%s.%s, drop it!\n",
-						//tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc ); */
+					#ifdef _DEBUG
+						printf( "trace2peak: Overlapped in %s.%s.%s.%s, drop it!\n",
+						tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc );
+					#endif
 						continue;
 					}
 					else if ( tmp_time > 0.0 && traceptr->lasttime > 0.0 )	{
@@ -293,26 +299,33 @@ int main ( int argc, char **argv )
 							traceptr->firsttime = TRUE;
 							continue;
 						}
-					/* Debug */
-						/* else {
+					#ifdef _DEBUG
+						else {
 							printf( "trace2peak: Found %ld sample gap in %s.%s.%s.%s!\n",
 								(long)(tmp_time * tracebuffer.trh2x.samprate),
 								tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc );
-						} */
+						}
+					#endif
 					}
 				}
 
 			/* Record the time that the trace last updated */
 				traceptr->lasttime = tracebuffer.trh2x.endtime;
-			/* Setup the pointer of float data */
-				tracedata_f   = (float *)(&tracebuffer.trh2x + 1);
-				tracedata_end = tracedata_f + tracebuffer.trh2x.nsamp;
+			/* Setup the pointer of data */
+				dataptr = &tracebuffer.trh2x + 1;
 			/* Wait for the D.C. */
-				if ( traceptr->readycount < DriftCorrectThreshold )	{
-					traceptr->readycount += (uint16_t)(tracebuffer.trh2x.nsamp/tracebuffer.trh2x.samprate + 0.5);
-
-					for ( ; tracedata_f < tracedata_end; tracedata_f++ )
-						traceptr->average += 0.001 * (*tracedata_f - traceptr->average);
+				if ( traceptr->readycount < DriftCorrectThreshold ) {
+					traceptr->readycount += (uint16_t)(tracebuffer.trh2x.nsamp / tracebuffer.trh2x.samprate + 0.5);
+					if ( tracebuffer.trh2x.datatype[1] == '8' ) {
+						FOR_EACH_TRACE_DATA( dataptr, dataptr_end, tracebuffer.trh2x.nsamp, double * ) {
+							traceptr->average += 0.001 * (*(double *)dataptr - traceptr->average);
+						}
+					}
+					else {
+						FOR_EACH_TRACE_DATA( dataptr, dataptr_end, tracebuffer.trh2x.nsamp, float * ) {
+							traceptr->average += 0.001 * (*(float *)dataptr - traceptr->average);
+						}
+					}
 
 					if ( traceptr->readycount >= DriftCorrectThreshold ) {
 						printf(
@@ -327,17 +340,33 @@ int main ( int argc, char **argv )
 				peak_value = 0.0;
 				peak_time  = tmp_time = tracebuffer.trh2x.starttime;
 			/* Go through all the data */
-				for ( ; tracedata_f < tracedata_end; tracedata_f++ ) {
-				/* Compute the data average & remove it */
-					traceptr->average += 0.001 * (*tracedata_f - traceptr->average);
-					*tracedata_f      -= traceptr->average;
-				/* Find the maximum absolute value */
-					if ( fabs(*tracedata_f) > fabs(peak_value) ) {
-					/* In fact, here we still store the signed value, it would be better */
-						peak_value = *tracedata_f;
-						peak_time  = tmp_time;
+				if ( tracebuffer.trh2x.datatype[1] == '8' ) {
+					FOR_EACH_TRACE_DATA( dataptr, dataptr_end, tracebuffer.trh2x.nsamp, double * ) {
+					/* Compute the data average & remove it */
+						traceptr->average  += 0.001 * (*(double *)dataptr - traceptr->average);
+						*(double *)dataptr -= traceptr->average;
+					/* Find the maximum absolute value */
+						if ( fabs(*(double *)dataptr) > fabs(peak_value) ) {
+						/* In fact, here we still store the signed value, it would be better */
+							peak_value = *(double *)dataptr;
+							peak_time  = tmp_time;
+						}
+						tmp_time += traceptr->delta;
 					}
-					tmp_time += traceptr->delta;
+				}
+				else {
+					FOR_EACH_TRACE_DATA( dataptr, dataptr_end, tracebuffer.trh2x.nsamp, float * ) {
+					/* Compute the data average & remove it */
+						traceptr->average += 0.001 * (*(float *)dataptr - traceptr->average);
+						*(float *)dataptr -= traceptr->average;
+					/* Find the maximum absolute value */
+						if ( fabs(*(float *)dataptr) > fabs(peak_value) ) {
+						/* In fact, here we still store the signed value, it would be better */
+							peak_value = *(float *)dataptr;
+							peak_time  = tmp_time;
+						}
+						tmp_time += traceptr->delta;
+					}
 				}
 
 			/* Packing the output message */
@@ -345,8 +374,7 @@ int main ( int argc, char **argv )
 				memcpy(obuffer.net, traceptr->net, TRACE2_NET_LEN);
 				memcpy(obuffer.loc, traceptr->loc, TRACE2_LOC_LEN);
 				memcpy(obuffer.chan, traceptr->chan, TRACE2_CHAN_LEN);
-			/* Obsoleted: Temporally, we use the pinno in tracebuf to store the record type */
-				//obuffer.recordtype = tracebuffer.trh2x.pinno;
+			/* */
 				obuffer.recordtype = _extra ? *(RECORD_TYPE *)_extra : DEF_PEAK_VALUE_TYPE;
 				obuffer.sourcemod  = reclogo.mod;
 			/* Dump the peak information into output message */

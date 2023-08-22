@@ -304,7 +304,7 @@ int main ( int argc, char **argv )
 				do {
 				/* Output buffer part */
 					tracebuffer_o.trh2x.nsamp   = apply_cf_func( &tracebuffer_o, &tracebuffer_i, traceptr->conversion_factor );
-					tracebuffer_o.trh2x.endtime = tracebuffer_o.trh2x.starttime + 1.0 * tracebuffer_o.trh2x.nsamp / tracebuffer_o.trh2x.samprate;
+					tracebuffer_o.trh2x.endtime = tracebuffer_o.trh2x.starttime + tracebuffer_o.trh2x.nsamp / tracebuffer_o.trh2x.samprate;
 				/* */
 					if ( tport_putmsg( &OutRegion, &Putlogo, recsize, tracebuffer_o.msg ) != PUT_OK )
 						logit("e", "cf2trace: Error putting message in region %ld\n", OutRegion.key);
