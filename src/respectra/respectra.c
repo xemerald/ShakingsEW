@@ -32,8 +32,8 @@ static void respectra_status( unsigned char, short, char * );
 static void respectra_end( void );  /* Free all the local memory & close socket */
 
 static void init_traceinfo( const TRACE2X_HEADER *, _TRACEINFO * );
-static void operation_rsp( _TRACEINFO *, float *, float *const, const int );
-static inline double get_mavg( const double, const double );
+static void operation_rsp( _TRACEINFO *, TracePacket *, int );
+static void operation_rmavg( _TRACEINFO *, TracePacket * );
 
 /* Ring messages things */
 static SHM_INFO InRegion;      /* shared memory region to use for i/o    */
@@ -58,8 +58,9 @@ static uint8_t  OutputTypeFlag;             /* 0 for Sd, 1 for Sv and 2 for Sa *
 static uint16_t DriftCorrectThreshold;      /* seconds waiting for D.C. */
 static uint16_t nLogo = 0;
 static double   DampingRatio  = 0.05;       /* The damping ratio for calculating, default is 5% */
-static double   NaturalPeriod = 1.0;        /* The period for calculating, default is 1 second & 0.3 second */
-static uint8_t  SCNLFilterSwitch = 0;       /* 0 if no filter command in the file    */
+static double   NaturalPeriod = 1.0;        /* The period for calculating, default is 1 second. Normally 0.3 & 3 seconds are other choice */
+static double   GainFactor    = 1.0;        /* The gain factor or amplify factor for the raw data, default is 1.0 */
+static uint8_t  SCNLFilterSwitch = 0;       /* 0 if no filter command in the file */
 
 /* Things to look up in the earthworm.h tables with getutil.c functions */
 static int64_t InRingKey;       /* key of transport ring for i/o     */
@@ -98,8 +99,6 @@ int main ( int argc, char **argv )
 
 	_TRACEINFO *traceptr;
 	TracePacket tracebuffer;  /* message which is sent to share ring    */
-	float      *tracedata_f;
-	float      *tracedata_end;
 	const void *_match = NULL;
 
 	double tmp_time;
@@ -234,9 +233,10 @@ int main ( int argc, char **argv )
 					!(traceptr = rsp_list_find( &tracebuffer.trh2x )) &&
 					!scnlfilter_trace_apply( tracebuffer.msg, reclogo.type, &_match )
 				) {
-				/* Debug */
-					//printf("respectra: Found SCNL %s.%s.%s.%s but not in the filter, drop it!\n",
-					//tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc);
+				#ifdef _DEBUG
+					printf("respectra: Found SCNL %s.%s.%s.%s but not in the filter, drop it!\n",
+					tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc);
+				#endif
 					continue;
 				}
 			/* If we can't get the trace pointer to the local list, search it again */
@@ -277,15 +277,17 @@ int main ( int argc, char **argv )
 			/* Start processing the gap in trace */
 				if ( fabs(tmp_time = tracebuffer.trh2x.starttime - traceptr->lasttime) > traceptr->delta * 2.0 ) {
 					if ( (long)tracebuffer.trh2x.starttime > (time(&timeNow) + 3) ) {
-					/* Debug */
-						//printf( "respectra: %s.%s.%s.%s NTP sync error, drop it!\n",
-						//tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc ); */
+					#ifdef _DEBUG
+						printf( "respectra: %s.%s.%s.%s NTP sync error, drop it!\n",
+						tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc );
+					#endif
 						continue;
 					}
 					else if ( tmp_time < 0.0 ) {
-					/* Debug */
-						//printf( "respectra: Overlapped in %s.%s.%s.%s, drop it!\n",
-						//tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc ); */
+					#ifdef _DEBUG
+						printf( "respectra: Overlapped in %s.%s.%s.%s, drop it!\n",
+						tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc );
+					#endif
 						continue;
 					}
 					else if ( tmp_time > 0.0 && traceptr->lasttime > 0.0 ) {
@@ -299,23 +301,22 @@ int main ( int argc, char **argv )
 						/* Due to large gap, try to restart this trace */
 							init_traceinfo( &tracebuffer.trh2x, traceptr );
 						}
-					/* Debug */
-						/* else {
+					#ifdef _DEBUG
+						else {
 							printf( "respectra: Found %ld sample gap in %s.%s.%s.%s!\n",
 								(long)(tmp_time * tracebuffer.trh2x.samprate),
 								tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc );
-						} */
+						}
+					#endif
 					}
 				}
 
 			/* Record the time that the trace last updated */
 				traceptr->lasttime = tracebuffer.trh2x.endtime;
-			/* Setup the pointer of float data */
-				tracedata_f   = (float *)(&tracebuffer.trh2x + 1);
-				tracedata_end = tracedata_f + tracebuffer.trh2x.nsamp;
 			/* Wait for the D.C. */
 				if ( traceptr->readycount >= DriftCorrectThreshold ) {
-					operation_rsp( traceptr, tracedata_f, tracedata_end, OutputTypeFlag );
+				/* Do the main operation */
+					operation_rsp( traceptr, &tracebuffer, OutputTypeFlag );
 				/* Modify the trace header to indicate that the data already been processed */
 					tracebuffer.trh2x.pinno = OutputTypeFlag;
 				/*
@@ -327,9 +328,8 @@ int main ( int argc, char **argv )
 				}
 				else {
 					traceptr->readycount += (uint16_t)(tracebuffer.trh2x.nsamp/tracebuffer.trh2x.samprate + 0.5);
-				/* */
-					for ( ; tracedata_f < tracedata_end; tracedata_f++ )
-						traceptr->average = get_mavg( *tracedata_f, traceptr->average );
+				/* Only do the average removing before D.C complete */
+					operation_rmavg( traceptr, &tracebuffer );
 				/* */
 					if ( traceptr->readycount >= DriftCorrectThreshold ) {
 						printf(
@@ -474,6 +474,10 @@ static void respectra_config( char *configfile )
 			else if ( k_its("NaturalPeriod") ) {
 				NaturalPeriod = k_val();
 				logit("o", "respectra: The natural period change to %lf\n", NaturalPeriod);
+			}
+			else if ( k_its("GainFactor") ) {
+				GainFactor = k_val();
+				logit("o", "respectra: The gain factor change to %lf\n", GainFactor);
 			}
 		/* Enter installation & module to get event messages from */
 		/* 7 */
@@ -664,59 +668,90 @@ static void init_traceinfo( const TRACE2X_HEADER *trh2x, _TRACEINFO *traceptr )
 	return;
 }
 
-/*
+/**
+ * @brief
  *
  */
-static void operation_rsp( _TRACEINFO *traceptr, float *tracedata_f, float *const tracedata_end, int type )
+#define OPERATION_RSP_MACRO(_DATA_PTR_TYPE, _TRACE_PTR, _TBUFF_PTR, _OUTPUT_TYPE) \
+		__extension__({ \
+			double _dsample, _slope; \
+			double _resp_d, _resp_v, _resp_a; \
+			double _result; \
+			const double *const _a = (_TRACE_PTR)->pmatrix->a; \
+			const double *const _b = (_TRACE_PTR)->pmatrix->b; \
+			double *const _x = (_TRACE_PTR)->xmatrix; \
+			_DATA_PTR_TYPE _dataptr = (_DATA_PTR_TYPE)(&(_TBUFF_PTR)->trh2x + 1); \
+			_DATA_PTR_TYPE _dataptr_end = _dataptr + (_TBUFF_PTR)->trh2x.nsamp; \
+			for ( ; _dataptr < _dataptr_end; _dataptr++ ) { \
+				_dsample = *_dataptr * GainFactor; \
+				(_TRACE_PTR)->average += 0.001 * (_dsample - (_TRACE_PTR)->average); \
+				_dsample -= (_TRACE_PTR)->average; \
+				_slope = (_dsample - (_TRACE_PTR)->lastsample) / (_TRACE_PTR)->intsteps; \
+				_result = 0.0; \
+				for ( int _i = 0; _i < (int)(_TRACE_PTR)->intsteps; _i++ ) { \
+					_resp_a = (_TRACE_PTR)->lastsample + _slope * _i; \
+					_resp_d = _a[0] * _x[0] + _a[1] * _x[1] - _b[0] * _resp_a - _b[1] * _slope; \
+					_resp_v = _a[2] * _x[0] + _a[3] * _x[1] - _b[2] * _resp_a - _b[3] * _slope; \
+					_resp_a = -(DAFreqDamping * _resp_v + AFreqSquare * _resp_d); \
+					_x[0] = _resp_d; \
+					_x[1] = _resp_v; \
+					_x[2] = _resp_a; \
+					if ( fabs(_x[(_OUTPUT_TYPE)]) > fabs(_result) ) \
+						_result = _x[(_OUTPUT_TYPE)]; \
+				} \
+				(_TRACE_PTR)->lastsample = _dsample; \
+				*_dataptr = _result; \
+			} \
+		})
+/**
+ * @brief
+ *
+ * @param traceptr
+ * @param tbufferptr
+ * @param type
+ */
+static void operation_rsp( _TRACEINFO *traceptr, TracePacket *tbufferptr, int type )
 {
-	int i;
-
-	double  dsample, slope;
-	double  gsamp1, gsamp2;
-	double  sd, sv, sa;
-	double  result = 0.0;
-
-	const double *const a = traceptr->pmatrix->a;
-	const double *const b = traceptr->pmatrix->b;
-	double *const       x = traceptr->xmatrix;
-
 	type -= RECORD_SPECTRAL_DISPLACEMENT;
-
-/* Go through all the data */
-	for ( ; tracedata_f < tracedata_end; tracedata_f++ ) {
-	/* Compute the data average & remove it */
-		traceptr->average = get_mavg( *tracedata_f, traceptr->average );
-		dsample           = *tracedata_f - traceptr->average;
-		slope             = (dsample - traceptr->lastsample) / traceptr->intsteps;
-		result            = 0.0;
-	/* Do integral each loop inc. with integral interval */
-		for ( i = 0; i < (int)traceptr->intsteps; i++ ) {
-			gsamp1 = traceptr->lastsample + slope * (double)i;
-			gsamp2 = traceptr->lastsample + slope * (double)(i + 1);
-		/* Main integral process */
-			sd = a[0] * x[0] + a[1] * x[1] - b[0] * gsamp1 - b[1] * gsamp2;
-			sv = a[2] * x[0] + a[3] * x[1] - b[2] * gsamp1 - b[3] * gsamp2;
-			sa = -(DAFreqDamping * sv + AFreqSquare * sd);
-		/* Store the previous displacement & velocity */
-			x[0] = sd;
-			x[1] = sv;
-			x[2] = sa;
-
-			if ( fabs(x[type]) > fabs(result) )
-				result = x[type];
-		}
-	/* Store the result to the trace */
-		traceptr->lastsample = dsample;
-		*tracedata_f = result;
-	}
+/* Go through all the double precision data */
+	if ( tbufferptr->trh2x.datatype[1] == '8' )
+		OPERATION_RSP_MACRO( double *, traceptr, tbufferptr, type );
+/* Go through all the single precision data */
+	else
+		OPERATION_RSP_MACRO( float *, traceptr, tbufferptr, type );
 
 	return;
 }
 
-/*
+/**
+ * @brief
  *
  */
-static inline double get_mavg( const double sample, const double average )
+#define OPERATION_RMAVG_MACRO(_DATA_PTR_TYPE, _TRACE_PTR, _TBUFF_PTR) \
+		__extension__({ \
+			double _dsample; \
+			_DATA_PTR_TYPE _dataptr = (_DATA_PTR_TYPE)(&(_TBUFF_PTR)->trh2x + 1); \
+			_DATA_PTR_TYPE _dataptr_end = _dataptr + (_TBUFF_PTR)->trh2x.nsamp; \
+			for ( ; _dataptr < _dataptr_end; _dataptr++ ) { \
+				_dsample = *_dataptr * GainFactor; \
+				(_TRACE_PTR)->average += 0.001 * (_dsample - (_TRACE_PTR)->average); \
+				*_dataptr = _dsample - (_TRACE_PTR)->average; \
+			} \
+		})
+/**
+ * @brief
+ *
+ * @param traceptr
+ * @param tbufferptr
+ */
+static void operation_rmavg( _TRACEINFO *traceptr, TracePacket *tbufferptr )
 {
-	return average + 0.001 * (sample - average);
+/* Go through all the double precision data */
+	if ( tbufferptr->trh2x.datatype[1] == '8' )
+		OPERATION_RMAVG_MACRO( double *, traceptr, tbufferptr );
+/* Go through all the single precision data */
+	else
+		OPERATION_RMAVG_MACRO( float *, traceptr, tbufferptr );
+
+	return;
 }

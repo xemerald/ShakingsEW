@@ -122,7 +122,7 @@ void rsp_pmat_end( void )
 static PMATRIX design_pmatrix( const double damping, const double afreq, const double delta )
 {
 	PMATRIX result;
-	double  tmp = 0.0;
+	double  tmp;
 
 	const double dampsq  = damping * damping;
 	const double afreqsq = afreq * afreq;
@@ -130,9 +130,8 @@ static PMATRIX design_pmatrix( const double damping, const double afreq, const d
 
 	const double a0  = exp(-dampaf * delta);
 	const double a1  = afreq * sqrt(1.0 - dampsq);
-	tmp = a1 * delta;
-	const double a2  = sin(tmp);
-	const double a3  = cos(tmp);
+	const double a2  = sin(a1 * delta);
+	const double a3  = cos(a1 * delta);
 	const double a4  = (2.0 * dampsq - 1.0) / afreqsq;
 	const double a5  = damping / afreq;
 	const double a6  = 2.0 * a5 / afreqsq;
@@ -153,6 +152,9 @@ static PMATRIX design_pmatrix( const double damping, const double afreq, const d
 	tmp = (a4 * a11 + a6 * a10 + a7) / delta;
 	result.b[2] = -tmp - a5 * a11 - a7 * a10;
 	result.b[3] = tmp;
+/* Special trick for reducing computation load */
+	result.b[0] += result.b[1];
+	result.b[2] += result.b[3];
 
 	return result;
 }

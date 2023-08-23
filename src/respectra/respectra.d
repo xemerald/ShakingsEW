@@ -20,6 +20,7 @@ OutputType         Sa
 #
 DampingRatio       0.05
 NaturalPeriod      0.3
+GainFactor         1
 
 # Settings for pre-processing of trace:
 #

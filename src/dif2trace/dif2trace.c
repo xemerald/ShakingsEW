@@ -337,11 +337,9 @@ int main ( int argc, char **argv )
 
 			/* Record the time that the trace last updated */
 				traceptr->lasttime = tracebuffer.trh2x.endtime;
-			/* Remove the average before real process */
-				operation_rmavg( traceptr, &tracebuffer );
 			/* Wait for the D.C. */
 				if ( traceptr->readycount >= DriftCorrectThreshold ) {
-				/* */
+				/* Do the main operaion */
 					operationfunc( traceptr, &tracebuffer );
 				/* Modify the trace header to indicate that the data already been processed */
 					tracebuffer.trh2x.pinno += operationdirc;
@@ -354,6 +352,8 @@ int main ( int argc, char **argv )
 				}
 				else {
 					traceptr->readycount += (uint16_t)(tracebuffer.trh2x.nsamp / tracebuffer.trh2x.samprate + 0.5);
+				/* Only do the average removing before D.C complete */
+					operation_rmavg( traceptr, &tracebuffer );
 				/* */
 					if ( traceptr->readycount >= DriftCorrectThreshold ) {
 						printf(
@@ -740,10 +740,12 @@ static void operation_rmavg( _TRACEINFO *traceptr, TracePacket *tbufferptr )
 			_DATA_PTR_TYPE _dataptr = (_DATA_PTR_TYPE)(&(_TBUFF_PTR)->trh2x + 1); \
 			_DATA_PTR_TYPE _dataptr_end = _dataptr + (_TBUFF_PTR)->trh2x.nsamp; \
 			for ( ; _dataptr < _dataptr_end; _dataptr++ ) { \
-				_result = (*(_DATA_PTR_TYPE)_dataptr - (_TRACE_PTR)->lastsample[0]) / (_TRACE_PTR)->delta; \
-				(_TRACE_PTR)->lastsample[0] = *(_DATA_PTR_TYPE)_dataptr; \
+				(_TRACE_PTR)->average += 0.001 * (*_dataptr - (_TRACE_PTR)->average); \
+				*_dataptr -= (_TRACE_PTR)->average; \
+				_result = (*_dataptr - (_TRACE_PTR)->lastsample[0]) / (_TRACE_PTR)->delta; \
+				(_TRACE_PTR)->lastsample[0] = *_dataptr; \
 				(_TRACE_PTR)->lastsample[1] = _result; \
-				*(_DATA_PTR_TYPE)_dataptr = _result; \
+				*_dataptr = _result; \
 			} \
 		})
 /**
@@ -775,12 +777,14 @@ static void operation_diff( _TRACEINFO *traceptr, TracePacket *tbufferptr )
 			_DATA_PTR_TYPE _dataptr = (_DATA_PTR_TYPE)(&(_TBUFF_PTR)->trh2x + 1); \
 			_DATA_PTR_TYPE _dataptr_end = _dataptr + (_TBUFF_PTR)->trh2x.nsamp; \
 			for ( ; _dataptr < _dataptr_end; _dataptr++ ) { \
-				_tmp = (*(_DATA_PTR_TYPE)_dataptr - (_TRACE_PTR)->lastsample[0]) / (_TRACE_PTR)->delta; \
+				(_TRACE_PTR)->average += 0.001 * (*_dataptr - (_TRACE_PTR)->average); \
+				*_dataptr -= (_TRACE_PTR)->average; \
+				_tmp = (*_dataptr - (_TRACE_PTR)->lastsample[0]) / (_TRACE_PTR)->delta; \
 				_result = (_tmp - (_TRACE_PTR)->lastsample[1]) / (_TRACE_PTR)->delta; \
-				(_TRACE_PTR)->lastsample[0] = *(_DATA_PTR_TYPE)_dataptr; \
+				(_TRACE_PTR)->lastsample[0] = *_dataptr; \
 				(_TRACE_PTR)->lastsample[1] = _tmp; \
 				(_TRACE_PTR)->lastsample[2] = _result; \
-				*(_DATA_PTR_TYPE)_dataptr = _result; \
+				*_dataptr = _result; \
 			} \
 		})
 /**
@@ -812,6 +816,8 @@ static void operation_ddiff( _TRACEINFO *traceptr, TracePacket *tbufferptr )
 			_DATA_PTR_TYPE _dataptr = (_DATA_PTR_TYPE)(&(_TBUFF_PTR)->trh2x + 1); \
 			_DATA_PTR_TYPE _dataptr_end = _dataptr + (_TBUFF_PTR)->trh2x.nsamp; \
 			for ( ; _dataptr < _dataptr_end; _dataptr++ ) { \
+				(_TRACE_PTR)->average += 0.001 * (*_dataptr - (_TRACE_PTR)->average); \
+				*_dataptr -= (_TRACE_PTR)->average; \
 				_result = ((_TRACE_PTR)->lastsample[0] + *_dataptr) * _halfdelta + (_TRACE_PTR)->lastsample[1]; \
 				(_TRACE_PTR)->lastsample[0] = *_dataptr; \
 				(_TRACE_PTR)->lastsample[1] = _result; \
@@ -848,6 +854,8 @@ static void operation_int( _TRACEINFO *traceptr, TracePacket *tbufferptr )
 			_DATA_PTR_TYPE _dataptr = (_DATA_PTR_TYPE)(&(_TBUFF_PTR)->trh2x + 1); \
 			_DATA_PTR_TYPE _dataptr_end = _dataptr + (_TBUFF_PTR)->trh2x.nsamp; \
 			for ( ; _dataptr < _dataptr_end; _dataptr++ ) { \
+				(_TRACE_PTR)->average += 0.001 * (*_dataptr - (_TRACE_PTR)->average); \
+				*_dataptr -= (_TRACE_PTR)->average; \
 				_tmp = ((_TRACE_PTR)->lastsample[0] + *_dataptr) * _halfdelta + (_TRACE_PTR)->lastsample[1]; \
 				_result = ((_TRACE_PTR)->lastsample[1] + _tmp) * _halfdelta + (_TRACE_PTR)->lastsample[2]; \
 				(_TRACE_PTR)->lastsample[0] = *_dataptr ; \
