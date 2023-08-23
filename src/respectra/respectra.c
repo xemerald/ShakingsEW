@@ -313,6 +313,8 @@ int main ( int argc, char **argv )
 
 			/* Record the time that the trace last updated */
 				traceptr->lasttime = tracebuffer.trh2x.endtime;
+			/* Update the conversion factor with the gain factor */
+				tracebuffer.trh2x.x.v21.conversion_factor *= GainFactor;
 			/* Wait for the D.C. */
 				if ( traceptr->readycount >= DriftCorrectThreshold ) {
 				/* Do the main operation */

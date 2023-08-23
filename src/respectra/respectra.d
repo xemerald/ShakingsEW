@@ -15,12 +15,12 @@ HeartBeatInterval  15             # seconds between heartbeats
 #
 OutputType         Sa
 
-# Settings for computation of spectra, include critical damping ratio in fractions &
+# Settings for computation of response, include critical damping ratio in fractions &
 # the specified natural period:
 #
 DampingRatio       0.05
 NaturalPeriod      0.3
-GainFactor         1
+GainFactor         1.0
 
 # Settings for pre-processing of trace:
 #
