@@ -35,6 +35,23 @@ SetPeakValueType     2          dis               PGD
 SetPeakValueType     3          sa                SAL
 SetPeakValueType     4          sa                SAS
 
+# List of generating intensity index (Under construction):
+#
+# Something about "Input Peak Value":
+# The input value column link to "SetPeakValueType" above, it use the bit
+# position as setting method: The first (whose Index# is 0) input value list above
+# should be the first bit from right to left; therefore, the second (whose Index# is 1)
+# input message should be the second bit and so on... By the way, the input value
+# should be in decimal & the maximum bit position is 8.
+#
+# List the Intensity type to generate from those peak values.
+#                  Intensity Types       Input Peak Value
+GenIntensityType        CWBPGA                1
+GenIntensityType        CWBPGV                2
+GenIntensityType        CWB2020               3
+GenIntensityType        CWBPGA                8
+GenIntensityType        CWBPGA               16
+
 # List of station/channel/network/loc codes to process and its set value index (link to SetPeakValueType):
 #
 # Use any combination of Allow_SCNL (to process data as-is) and
@@ -59,21 +76,3 @@ SetPeakValueType     4          sa                SAS
                                                                           # and they all belong to PGV
 #Allow_SCNL_Remap JGR VHZ NC --    *   EHZ * *           1                # Change component code only
 #Allow_SCNL_Remap CAL *   NC *     ALM *   * *           2                # Allow all component of CAL, but change the site code to ALM
-
-
-# List of generating intensity index (Under construction):
-#
-# Something about "Input Peak Value":
-# The input value column link to "SetPeakValueType" above, it use the bit
-# position as setting method: The first (whose Index# is 0) input value list above
-# should be the first bit from right to left; therefore, the second (whose Index# is 1)
-# input message should be the second bit and so on... By the way, the input value
-# should be in decimal & the maximum bit position is 8.
-#
-# List the Intensity type to generate from those peak values.
-#                  Intensity Types       Input Peak Value
-GenIntensityType        CWBPGA                1
-GenIntensityType        CWBPGV                2
-GenIntensityType        CWB2020               3
-GenIntensityType        CWBPGA                8
-GenIntensityType        CWBPGA               16

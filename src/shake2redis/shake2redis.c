@@ -280,9 +280,10 @@ int main ( int argc, char **argv )
 					(chapeak = sk2rd_list_chlist_find( stapeak, buffer.tpv.chan ))) &&
 					!scnlfilter_trace_apply( buffer.msg, reclogo.type, &_match )
 				) {
-				/* Debug */
-					//printf("shake2redis: Found SCNL %s.%s.%s.%s but not in the filter, drop it!\n",
-					//buffer.tpv.sta, buffer.tpv.chan, buffer.tpv.net, buffer.tpv.loc);
+				#ifdef _DEBUG
+					printf("shake2redis: Found SCNL %s.%s.%s.%s but not in the filter, drop it!\n",
+					buffer.tpv.sta, buffer.tpv.chan, buffer.tpv.net, buffer.tpv.loc);
+				#endif
 					continue;
 				}
 			/* If this is the first time recv. this station, try to insert into the binary tree */
@@ -520,21 +521,6 @@ static void shake2redis_config( char *configfile )
 				}
 			}
 		/* 8 */
-			else if ( scnlfilter_com( "shake2redis" ) ) {
-			/* */
-				for ( str = k_com(), i = 0; *str == ' ' && i < (int)strlen(str); str++, i++ );
-				if ( strncmp(str, "Block_SCNL", 10) ) {
-				/* Maybe we need much more checking for this command */
-					if ( scnlfilter_extra_com( proc_com_sv_index ) < 0 ) {
-						logit("o", "shake2redis: No set value index define in command: \"%s\" ", k_com());
-						logit("o", ", first index(0) will be filled!\n");
-					/* Reset the error code for this command */
-						k_err();
-					}
-					init[8] = 1;
-				}
-			}
-		/* 9 */
 			else if ( k_its("GenIntensityType") ) {
 				if ( (nIntensity + 1) >= MAX_TYPE_INTENSITY ) {
 					logit("e", "shake2redis: Too many <GenIntensityType> commands in <%s>", configfile);
@@ -559,9 +545,24 @@ static void shake2redis_config( char *configfile )
 				}
 				GenIntensity[nIntensity].npvalue = i;
 				nIntensity++;
-				init[9] = 1;
+				init[8] = 1;
 			}
-		 /* Unknown command*/
+		/* 9 */
+			else if ( scnlfilter_com( "shake2redis" ) ) {
+			/* */
+				for ( str = k_com(), i = 0; *str == ' ' && i < (int)strlen(str); str++, i++ );
+				if ( strncmp(str, "Block_SCNL", 10) ) {
+				/* Maybe we need much more checking for this command */
+					if ( scnlfilter_extra_com( proc_com_sv_index ) < 0 ) {
+						logit("o", "shake2redis: No set value index define in command: \"%s\" ", k_com());
+						logit("o", ", first index(0) will be filled!\n");
+					/* Reset the error code for this command */
+						k_err();
+					}
+					init[9] = 1;
+				}
+			}
+		/* Unknown command*/
 			else {
 				logit("e", "shake2redis: <%s> Unknown command in <%s>.\n", com, configfile);
 				continue;
@@ -591,8 +592,8 @@ static void shake2redis_config( char *configfile )
 		if ( !init[5] ) logit("e", "<QueueSize> "            );
 		if ( !init[6] ) logit("e", "any <GetEventsFrom> "    );
 		if ( !init[7] ) logit("e", "any <SetPeakValueType> " );
-		if ( !init[8] ) logit("e", "any <Allow_SCNL*> "      );
-		if ( !init[9] ) logit("e", "any <GenIntensityType> " );
+		if ( !init[8] ) logit("e", "any <GenIntensityType> " );
+		if ( !init[9] ) logit("e", "any <Allow_SCNL*> "      );
 
 		logit("e", "command(s) in <%s>; exiting!\n", configfile);
 		exit(-1);
@@ -642,7 +643,7 @@ static void shake2redis_lookup( void )
  * shake2redis_status() - Builds a heartbeat or error message & puts it into
  *                     shared memory.  Writes errors to log file & screen.
  */
-static void shake2redis_status( uint8_t type, short ierr, char *note )
+static void shake2redis_status( unsigned char type, short ierr, char *note )
 {
 	MSG_LOGO    logo;
 	char        msg[512];
@@ -1073,7 +1074,7 @@ static double update_single_pvalue( STATION_PEAK *stapeak, const int pvalue_i )
 	double     _pvalue = NULL_PEAKVALUE;
 	double     _ptime  = NULL_PEAKVALUE;
 /* */
- 	SHAKE_RECORD shakerec;
+	SHAKE_RECORD shakerec;
 
 /* */
 	DL_LIST_FOR_EACH_DATA( (DL_NODE *)stapeak->chlist[pvalue_i], node, chapeak ) {
