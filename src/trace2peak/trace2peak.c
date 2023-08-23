@@ -67,8 +67,31 @@ static uint8_t TypeTracePeak = 0;
 #define  ERR_QUEUE         3   /* error queueing message for sending      */
 static char Text[150];         /* string for log/error messages          */
 
-#define FOR_EACH_TRACE_DATA(__DATAPTR, __DATAPTR_END, __DATA_NSAMP, __DATA_PTR_TYPE) \
-		for ( (__DATAPTR_END) = (__DATA_PTR_TYPE)(__DATAPTR) + (__DATA_NSAMP); (__DATAPTR) < (__DATAPTR_END); (__DATAPTR) = (__DATA_PTR_TYPE)(__DATAPTR) + 1 )
+#define FOR_EACH_TRACE_DATA_AVG(_DATA_PTR, _DATA_PTR_END, _DATA_PTR_TYPE, _INPUT_TRACEPACK, _TRACE_PTR) \
+		__extension__({ \
+			for ( (_DATA_PTR) = (_DATA_PTR_TYPE)(&(_INPUT_TRACEPACK).trh2x + 1), (_DATA_PTR_END) = (_DATA_PTR_TYPE)(_DATA_PTR) + (_INPUT_TRACEPACK).trh2x.nsamp; \
+				(_DATA_PTR) < (_DATA_PTR_END); \
+				(_DATA_PTR) = (_DATA_PTR_TYPE)(_DATA_PTR) + 1 \
+			) { \
+				(_TRACE_PTR)->average += 0.001 * (*(_DATA_PTR_TYPE)(_DATA_PTR) - (_TRACE_PTR)->average); \
+			} \
+		})
+
+#define FOR_EACH_TRACE_DATA_MAIN(_DATA_PTR, _DATA_PTR_END, _DATA_PTR_TYPE, _INPUT_TRACEPACK, _TRACE_PTR, _OUTPUT_TRACEPEAK) \
+		__extension__({ \
+			double _tmp_time = (_OUTPUT_TRACEPEAK).peaktime; \
+			for ( (_DATA_PTR) = (_DATA_PTR_TYPE)(&(_INPUT_TRACEPACK).trh2x + 1), (_DATA_PTR_END) = (_DATA_PTR_TYPE)(_DATA_PTR) + (_INPUT_TRACEPACK).trh2x.nsamp; \
+				(_DATA_PTR) < (_DATA_PTR_END); \
+				(_DATA_PTR) = (_DATA_PTR_TYPE)(_DATA_PTR) + 1, _tmp_time += (_TRACE_PTR)->delta \
+			) { \
+				(_TRACE_PTR)->average += 0.001 * (*(_DATA_PTR_TYPE)(_DATA_PTR) - (_TRACE_PTR)->average); \
+				*(_DATA_PTR_TYPE)(_DATA_PTR) -= (_TRACE_PTR)->average; \
+				if ( fabs(*(_DATA_PTR_TYPE)(_DATA_PTR)) > fabs((_OUTPUT_TRACEPEAK).peakvalue) ) { \
+					(_OUTPUT_TRACEPEAK).peakvalue = *(_DATA_PTR_TYPE)(_DATA_PTR); \
+					(_OUTPUT_TRACEPEAK).peaktime = _tmp_time; \
+				} \
+			} \
+		})
 
 /*
  *
@@ -88,8 +111,6 @@ int main ( int argc, char **argv )
 	TracePacket tracebuffer;  /* message which is sent to share ring    */
 	void       *dataptr;
 	void       *dataptr_end;
-	double      peak_value;
-	double      peak_time;
 	double      tmp_time;
 	const void *_match = NULL;
 	const void *_extra = NULL;
@@ -311,21 +332,13 @@ int main ( int argc, char **argv )
 
 			/* Record the time that the trace last updated */
 				traceptr->lasttime = tracebuffer.trh2x.endtime;
-			/* Setup the pointer of data */
-				dataptr = &tracebuffer.trh2x + 1;
 			/* Wait for the D.C. */
 				if ( traceptr->readycount < DriftCorrectThreshold ) {
 					traceptr->readycount += (uint16_t)(tracebuffer.trh2x.nsamp / tracebuffer.trh2x.samprate + 0.5);
-					if ( tracebuffer.trh2x.datatype[1] == '8' ) {
-						FOR_EACH_TRACE_DATA( dataptr, dataptr_end, tracebuffer.trh2x.nsamp, double * ) {
-							traceptr->average += 0.001 * (*(double *)dataptr - traceptr->average);
-						}
-					}
-					else {
-						FOR_EACH_TRACE_DATA( dataptr, dataptr_end, tracebuffer.trh2x.nsamp, float * ) {
-							traceptr->average += 0.001 * (*(float *)dataptr - traceptr->average);
-						}
-					}
+					if ( tracebuffer.trh2x.datatype[1] == '8' )
+						FOR_EACH_TRACE_DATA_AVG( dataptr, dataptr_end, double *, tracebuffer, traceptr );
+					else
+						FOR_EACH_TRACE_DATA_AVG( dataptr, dataptr_end, float *, tracebuffer, traceptr );
 
 					if ( traceptr->readycount >= DriftCorrectThreshold ) {
 						printf(
@@ -337,37 +350,14 @@ int main ( int argc, char **argv )
 				}
 
 			/* Reset the peak value & its time */
-				peak_value = 0.0;
-				peak_time  = tmp_time = tracebuffer.trh2x.starttime;
-			/* Go through all the data */
-				if ( tracebuffer.trh2x.datatype[1] == '8' ) {
-					FOR_EACH_TRACE_DATA( dataptr, dataptr_end, tracebuffer.trh2x.nsamp, double * ) {
-					/* Compute the data average & remove it */
-						traceptr->average  += 0.001 * (*(double *)dataptr - traceptr->average);
-						*(double *)dataptr -= traceptr->average;
-					/* Find the maximum absolute value */
-						if ( fabs(*(double *)dataptr) > fabs(peak_value) ) {
-						/* In fact, here we still store the signed value, it would be better */
-							peak_value = *(double *)dataptr;
-							peak_time  = tmp_time;
-						}
-						tmp_time += traceptr->delta;
-					}
-				}
-				else {
-					FOR_EACH_TRACE_DATA( dataptr, dataptr_end, tracebuffer.trh2x.nsamp, float * ) {
-					/* Compute the data average & remove it */
-						traceptr->average += 0.001 * (*(float *)dataptr - traceptr->average);
-						*(float *)dataptr -= traceptr->average;
-					/* Find the maximum absolute value */
-						if ( fabs(*(float *)dataptr) > fabs(peak_value) ) {
-						/* In fact, here we still store the signed value, it would be better */
-							peak_value = *(float *)dataptr;
-							peak_time  = tmp_time;
-						}
-						tmp_time += traceptr->delta;
-					}
-				}
+				obuffer.peakvalue = 0.0;
+				obuffer.peaktime  = tracebuffer.trh2x.starttime;
+			/* Go through all the data for 'double' precision type */
+				if ( tracebuffer.trh2x.datatype[1] == '8' )
+					FOR_EACH_TRACE_DATA_MAIN( dataptr, dataptr_end, double *, tracebuffer, traceptr, obuffer );
+			/* Go through all the data for 'single' precision type */
+				else
+					FOR_EACH_TRACE_DATA_MAIN( dataptr, dataptr_end, float *, tracebuffer, traceptr, obuffer );
 
 			/* Packing the output message */
 				memcpy(obuffer.sta, traceptr->sta, TRACE2_STA_LEN);
@@ -377,9 +367,6 @@ int main ( int argc, char **argv )
 			/* */
 				obuffer.recordtype = _extra ? *(RECORD_TYPE *)_extra : DEF_PEAK_VALUE_TYPE;
 				obuffer.sourcemod  = reclogo.mod;
-			/* Dump the peak information into output message */
-				obuffer.peakvalue  = peak_value;
-				obuffer.peaktime   = peak_time;
 			/* Send the packed message to the output ring */
 				if ( tport_putmsg(&OutRegion, &Putlogo, TRACE_PEAKVALUE_SIZE, (char *)&obuffer) != PUT_OK )
 					logit("e", "trace2peak: Error putting message in region %ld\n", OutRegion.key);
