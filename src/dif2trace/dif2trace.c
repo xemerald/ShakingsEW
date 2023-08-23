@@ -31,11 +31,11 @@ static void dif2trace_status( unsigned char, short, char * );
 static void dif2trace_end( void );                /* Free all the local memory & close socket */
 
 static void init_traceinfo( const TRACE2X_HEADER *, const uint8_t, _TRACEINFO * );
-static void operation_rmavg( _TRACEINFO *, float *, float *const );
-static void operation_diff( _TRACEINFO *, float *, float *const );
-static void operation_ddiff( _TRACEINFO *, float *, float *const );
-static void operation_int( _TRACEINFO *, float *, float *const );
-static void operation_dint( _TRACEINFO *, float *, float *const );
+static void operation_rmavg( _TRACEINFO *, TracePacket * );
+static void operation_diff( _TRACEINFO *, TracePacket * );
+static void operation_ddiff( _TRACEINFO *, TracePacket * );
+static void operation_int( _TRACEINFO *, TracePacket * );
+static void operation_dint( _TRACEINFO *, TracePacket * );
 
 /* Ring messages things */
 static SHM_INFO InRegion;      /* shared memory region to use for i/o    */
@@ -89,21 +89,19 @@ int main ( int argc, char **argv )
 
 	int64_t  recsize = 0;
 	MSG_LOGO reclogo;
-	time_t   timeNow;          /* current time                  */
-	time_t   timeLastBeat;     /* time last heartbeat was sent  */
+	time_t   time_now;          /* current time                  */
+	time_t   time_last_beat;     /* time last heartbeat was sent  */
 	char    *lockfile;
 	int32_t  lockfile_fd;
 
 	_TRACEINFO *traceptr;
 	TracePacket tracebuffer;  /* message which is sent to share ring    */
-	float      *tracedata_f;
-	float      *tracedata_end;
 	const void *_match = NULL;
 
 	double tmp_time;
 
 	int8_t operationdirc = 0;
-	void (*operationfunc)( _TRACEINFO *, float *, float *const ) = NULL;
+	void (*operationfunc)( _TRACEINFO *, TracePacket * ) = NULL;
 
 /* Check command line arguments */
 	if ( argc != 2 ) {
@@ -179,12 +177,12 @@ int main ( int argc, char **argv )
 		}
 	}
 /* Force a heartbeat to be issued in first pass thru main loop */
-	timeLastBeat = time(&timeNow) - HeartBeatInterval - 1;
+	time_last_beat = time(&time_now) - HeartBeatInterval - 1;
 /*----------------------- setup done; start main loop -------------------------*/
 	while ( 1 ) {
 	/* Send dif2trace's heartbeat */
-		if  ( time(&timeNow) - timeLastBeat >= (int64_t)HeartBeatInterval ) {
-			timeLastBeat = timeNow;
+		if  ( time(&time_now) - time_last_beat >= (int64_t)HeartBeatInterval ) {
+			time_last_beat = time_now;
 			dif2trace_status( TypeHeartBeat, 0, "" );
 		}
 
@@ -259,9 +257,10 @@ int main ( int argc, char **argv )
 					!(traceptr = dif2tra_list_find( &tracebuffer.trh2x )) &&
 					!scnlfilter_trace_apply( tracebuffer.msg, reclogo.type, &_match )
 				) {
-				/* Debug */
-					//printf("dif2trace: Found SCNL %s.%s.%s.%s but not in the filter, drop it!\n",
-					//tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc);
+				#ifdef _DEBUG
+					printf("dif2trace: Found SCNL %s.%s.%s.%s but not in the filter, drop it!\n",
+					tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc);
+				#endif
 					continue;
 				}
 			/* If we can't get the trace pointer to the local list, search it again */
@@ -301,16 +300,18 @@ int main ( int argc, char **argv )
 				}
 			/* Start processing the gap in trace */
 				if ( fabs(tmp_time = tracebuffer.trh2x.starttime - traceptr->lasttime) > traceptr->delta * 2.0 ) {
-					if ( (time_t)tracebuffer.trh2x.starttime > (time(&timeNow) + 3) ) {
-					/* Debug */
-						//printf( "dif2trace: %s.%s.%s.%s NTP sync error, drop it!\n",
-						//tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc );
+					if ( (time_t)tracebuffer.trh2x.starttime > (time(&time_now) + 3) ) {
+					#ifdef _DEBUG
+						printf( "dif2trace: %s.%s.%s.%s NTP sync error, drop it!\n",
+						tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc );
+					#endif
 						continue;
 					}
 					else if ( tmp_time < 0.0 ) {
-					/* Debug */
-						//printf( "dif2trace: Overlapped in %s.%s.%s.%s, drop it!\n",
-						//tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc ); */
+					#ifdef _DEBUG
+						printf( "dif2trace: Overlapped in %s.%s.%s.%s, drop it!\n",
+						tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc );
+					#endif
 						continue;
 					}
 					else if ( tmp_time > 0.0 && traceptr->lasttime > 0.0 )	{
@@ -324,25 +325,23 @@ int main ( int argc, char **argv )
 						/* Due to large gap, try to restart this trace */
 							init_traceinfo( &tracebuffer.trh2x, OperationFlag, traceptr );
 						}
-					/* Debug */
-						/* else {
+					#ifdef _DEBUG
+						else {
 							printf( "dif2trace: Found %ld sample gap in %s.%s.%s.%s!\n",
 								(long)(tmp_time * tracebuffer.trh2x.samprate),
 								tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc );
-						} */
+						}
+					#endif
 					}
 				}
 
 			/* Record the time that the trace last updated */
 				traceptr->lasttime = tracebuffer.trh2x.endtime;
-			/* Setup the pointer of float data */
-				tracedata_f   = (float *)(&tracebuffer.trh2x + 1);
-				tracedata_end = tracedata_f + tracebuffer.trh2x.nsamp;
 			/* Wait for the D.C. */
 				if ( traceptr->readycount >= DriftCorrectThreshold ) {
 				/* */
-					operation_rmavg( traceptr, tracedata_f, tracedata_end );
-					operationfunc( traceptr, tracedata_f, tracedata_end );
+					operation_rmavg( traceptr, &tracebuffer );
+					operationfunc( traceptr, &tracebuffer );
 				/* Modify the trace header to indicate that the data already been processed */
 					tracebuffer.trh2x.pinno += operationdirc;
 				/*
@@ -355,7 +354,7 @@ int main ( int argc, char **argv )
 				else {
 					traceptr->readycount += (uint16_t)(tracebuffer.trh2x.nsamp / tracebuffer.trh2x.samprate + 0.5);
 				/* */
-					operation_rmavg( traceptr, tracedata_f, tracedata_end );
+					operation_rmavg( traceptr, &tracebuffer );
 
 					if ( traceptr->readycount >= DriftCorrectThreshold ) {
 						printf(
@@ -701,111 +700,177 @@ static void init_traceinfo( const TRACE2X_HEADER *trh2x, const uint8_t opflag, _
 	return;
 }
 
-/*
+/**
+ * @brief
  *
  */
-static void operation_rmavg( _TRACEINFO *traceptr, float *tracedata_f, float *const tracedata_end )
+#define OPERATION_RMAVG_MACRO(_DATA_PTR_TYPE, _TRACE_PTR, _TBUFF_PTR) \
+		__extension__({ \
+			_DATA_PTR_TYPE _dataptr = (_DATA_PTR_TYPE)(&(_TBUFF_PTR)->trh2x + 1); \
+			_DATA_PTR_TYPE _dataptr_end = _dataptr + (_TBUFF_PTR)->trh2x.nsamp; \
+			for ( ; _dataptr < _dataptr_end; _dataptr++ ) { \
+				(_TRACE_PTR)->average += 0.001 * (*_dataptr - (_TRACE_PTR)->average); \
+				*_dataptr -= (_TRACE_PTR)->average; \
+			} \
+		})
+/**
+ * @brief
+ *
+ * @param traceptr
+ * @param tbufferptr
+ */
+static void operation_rmavg( _TRACEINFO *traceptr, TracePacket *tbufferptr )
 {
-/* Go through all the data */
-	for ( ; tracedata_f < tracedata_end; tracedata_f++ ) {
-	/* Compute the data average & remove it */
-		traceptr->average += 0.001 * (*tracedata_f - traceptr->average);
-		*tracedata_f      -= traceptr->average;
-	}
+/* Go through all the double precision data */
+	if ( tbufferptr->trh2x.datatype[1] == '8' )
+		OPERATION_RMAVG_MACRO( double *, traceptr, tbufferptr );
+/* Go through all the single precision data */
+	else
+		OPERATION_RMAVG_MACRO( float *, traceptr, tbufferptr );
 
 	return;
 }
 
-/*
+/**
+ * @brief
  *
  */
-static void operation_diff( _TRACEINFO *traceptr, float *tracedata_f, float *const tracedata_end )
+#define OPERATION_DIFF_MACRO(_DATA_PTR_TYPE, _TRACE_PTR, _TBUFF_PTR) \
+		__extension__({ \
+			double _result; \
+			_DATA_PTR_TYPE _dataptr = (_DATA_PTR_TYPE)(&(_TBUFF_PTR)->trh2x + 1); \
+			_DATA_PTR_TYPE _dataptr_end = _dataptr + (_TBUFF_PTR)->trh2x.nsamp; \
+			for ( ; _dataptr < _dataptr_end; _dataptr++ ) { \
+				_result = (*(_DATA_PTR_TYPE)_dataptr - (_TRACE_PTR)->lastsample[0]) / (_TRACE_PTR)->delta; \
+				(_TRACE_PTR)->lastsample[0] = *(_DATA_PTR_TYPE)_dataptr; \
+				(_TRACE_PTR)->lastsample[1] = _result; \
+				*(_DATA_PTR_TYPE)_dataptr = _result; \
+			} \
+		})
+/**
+ * @brief
+ *
+ * @param traceptr
+ * @param tbufferptr
+ */
+static void operation_diff( _TRACEINFO *traceptr, TracePacket *tbufferptr )
 {
-	double result;
-
-/* Go through all the data */
-	for ( ; tracedata_f < tracedata_end; tracedata_f++ ) {
-	/* Do differential */
-		result = (*tracedata_f - traceptr->lastsample[0]) / traceptr->delta;
-		traceptr->lastsample[0] = *tracedata_f;
-		traceptr->lastsample[1] = result;
-
-		*tracedata_f = (float)result;
-	}
+/* Go through all the double precision data */
+	if ( tbufferptr->trh2x.datatype[1] == '8' )
+		OPERATION_DIFF_MACRO( double *, traceptr, tbufferptr );
+/* Go through all the single precision data */
+	else
+		OPERATION_DIFF_MACRO( float *, traceptr, tbufferptr );
 
 	return;
 }
 
-/*
+/**
+ * @brief
  *
  */
-static void operation_ddiff( _TRACEINFO *traceptr, float *tracedata_f, float *const tracedata_end )
+#define OPERATION_DDIFF_MACRO(_DATA_PTR_TYPE, _TRACE_PTR, _TBUFF_PTR) \
+		__extension__({ \
+			double _result; \
+			double _tmp; \
+			_DATA_PTR_TYPE _dataptr = (_DATA_PTR_TYPE)(&(_TBUFF_PTR)->trh2x + 1); \
+			_DATA_PTR_TYPE _dataptr_end = _dataptr + (_TBUFF_PTR)->trh2x.nsamp; \
+			for ( ; _dataptr < _dataptr_end; _dataptr++ ) { \
+				_tmp = (*(_DATA_PTR_TYPE)_dataptr - (_TRACE_PTR)->lastsample[0]) / (_TRACE_PTR)->delta; \
+				_result = (_tmp - (_TRACE_PTR)->lastsample[1]) / (_TRACE_PTR)->delta; \
+				(_TRACE_PTR)->lastsample[0] = *(_DATA_PTR_TYPE)_dataptr; \
+				(_TRACE_PTR)->lastsample[1] = _tmp; \
+				(_TRACE_PTR)->lastsample[2] = _result; \
+				*(_DATA_PTR_TYPE)_dataptr = _result; \
+			} \
+		})
+/**
+ * @brief
+ *
+ * @param traceptr
+ * @param tbufferptr
+ */
+static void operation_ddiff( _TRACEINFO *traceptr, TracePacket *tbufferptr )
 {
-	double result;
-	double tmp;
-
-/* Go through all the data */
-	for ( ; tracedata_f < tracedata_end; tracedata_f++ ) {
-	/* Do differential */
-		tmp = (*tracedata_f - traceptr->lastsample[0]) / traceptr->delta;
-		result = (tmp - traceptr->lastsample[1]) / traceptr->delta;
-		traceptr->lastsample[0] = *tracedata_f;
-		traceptr->lastsample[1] = tmp;
-		traceptr->lastsample[2] = result;
-
-		*tracedata_f = (float)result;
-	}
+/* Go through all the double precision data */
+	if ( tbufferptr->trh2x.datatype[1] == '8' )
+		OPERATION_DDIFF_MACRO( double *, traceptr, tbufferptr );
+/* Go through all the single precision data */
+	else
+		OPERATION_DDIFF_MACRO( float *, traceptr, tbufferptr );
 
 	return;
 }
 
-/*
+/**
+ * @brief
  *
  */
-static void operation_int( _TRACEINFO *traceptr, float *tracedata_f, float *const tracedata_end )
+#define OPERATION_INT_MACRO(_DATA_PTR_TYPE, _TRACE_PTR, _TBUFF_PTR) \
+		__extension__({ \
+			const double _halfdelta = (_TRACE_PTR)->delta * 0.5; \
+			double _result; \
+			_DATA_PTR_TYPE _dataptr = (_DATA_PTR_TYPE)(&(_TBUFF_PTR)->trh2x + 1); \
+			_DATA_PTR_TYPE _dataptr_end = _dataptr + (_TBUFF_PTR)->trh2x.nsamp; \
+			for ( ; _dataptr < _dataptr_end; _dataptr++ ) { \
+				_result = ((_TRACE_PTR)->lastsample[0] + *_dataptr) * _halfdelta + (_TRACE_PTR)->lastsample[1]; \
+				(_TRACE_PTR)->lastsample[0] = *_dataptr; \
+				(_TRACE_PTR)->lastsample[1] = _result; \
+				*_dataptr = dif2tra_filter_apply( _result, (_TRACE_PTR) ); \
+			} \
+		})
+/**
+ * @brief
+ *
+ * @param traceptr
+ * @param tbufferptr
+ */
+static void operation_int( _TRACEINFO *traceptr, TracePacket *tbufferptr )
 {
-	const double halfdelta = traceptr->delta * 0.5;
-	double result;
-
-/* Go through all the data */
-	for ( ; tracedata_f < tracedata_end; tracedata_f++ ) {
-	/* Do integral */
-		result = (traceptr->lastsample[0] + *tracedata_f) * halfdelta + traceptr->lastsample[1];
-		traceptr->lastsample[0] = *tracedata_f;
-		traceptr->lastsample[1] = result;
-
-	/* Apply the highpass filter */
-		result = dif2tra_filter_apply( result, traceptr );
-
-		*tracedata_f = (float)result;
-	}
+/* Go through all the double precision data */
+	if ( tbufferptr->trh2x.datatype[1] == '8' )
+		OPERATION_INT_MACRO( double *, traceptr, tbufferptr );
+/* Go through all the single precision data */
+	else
+		OPERATION_INT_MACRO( float *, traceptr, tbufferptr );
 
 	return;
 }
 
-/*
+/**
+ * @brief
  *
  */
-static void operation_dint( _TRACEINFO *traceptr, float *tracedata_f, float *const tracedata_end )
+#define OPERATION_DINT_MACRO(_DATA_PTR_TYPE, _TRACE_PTR, _TBUFF_PTR) \
+		__extension__({ \
+			const double _halfdelta = (_TRACE_PTR)->delta * 0.5; \
+			double _result; \
+			double _tmp; \
+			_DATA_PTR_TYPE _dataptr = (_DATA_PTR_TYPE)(&(_TBUFF_PTR)->trh2x + 1); \
+			_DATA_PTR_TYPE _dataptr_end = _dataptr + (_TBUFF_PTR)->trh2x.nsamp; \
+			for ( ; _dataptr < _dataptr_end; _dataptr++ ) { \
+				_tmp = ((_TRACE_PTR)->lastsample[0] + *_dataptr) * _halfdelta + (_TRACE_PTR)->lastsample[1]; \
+				_result = ((_TRACE_PTR)->lastsample[1] + _tmp) * _halfdelta + (_TRACE_PTR)->lastsample[2]; \
+				(_TRACE_PTR)->lastsample[0] = *_dataptr ; \
+				(_TRACE_PTR)->lastsample[1] = _tmp; \
+				(_TRACE_PTR)->lastsample[2] = _result; \
+				*_dataptr = dif2tra_filter_apply( _result, (_TRACE_PTR) ); \
+			} \
+		})
+/**
+ * @brief
+ *
+ * @param traceptr
+ * @param tbufferptr
+ */
+static void operation_dint( _TRACEINFO *traceptr, TracePacket *tbufferptr )
 {
-	const double halfdelta = traceptr->delta * 0.5;
-	double result;
-	double tmp;
-
-/* Go through all the data */
-	for ( ; tracedata_f < tracedata_end; tracedata_f++ ) {
-	/* Do integral */
-		tmp = (traceptr->lastsample[0] + *tracedata_f) * halfdelta + traceptr->lastsample[1];
-		result = (traceptr->lastsample[1] + tmp) * halfdelta + traceptr->lastsample[2];
-		traceptr->lastsample[0] = *tracedata_f ;
-		traceptr->lastsample[1] = tmp;
-		traceptr->lastsample[2] = result;
-
-	/* Apply the highpass filter */
-		result = dif2tra_filter_apply( result, traceptr );
-
-		*tracedata_f = (float)result;
-	}
+/* Go through all the double precision data */
+	if ( tbufferptr->trh2x.datatype[1] == '8' )
+		OPERATION_DINT_MACRO( double *, traceptr, tbufferptr );
+/* Go through all the single precision data */
+	else
+		OPERATION_DINT_MACRO( float *, traceptr, tbufferptr );
 
 	return;
 }

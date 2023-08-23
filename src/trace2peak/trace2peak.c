@@ -68,17 +68,16 @@ static uint8_t TypeTracePeak = 0;
 static char Text[150];         /* string for log/error messages          */
 
 /* Main process macro */
-#define FOR_EACH_TRACE_DATA_MAIN(_DATA_PTR, _DATA_PTR_END, _DATA_PTR_TYPE, _INPUT_TRACEPACK, _TRACE_PTR, _OUTPUT_TRACEPEAK) \
+#define FOR_EACH_TRACE_DATA_MAIN(_DATA_PTR_TYPE, _INPUT_TRACEPACK, _TRACE_PTR, _OUTPUT_TRACEPEAK) \
 		__extension__({ \
 			double _tmp_time = (_OUTPUT_TRACEPEAK).peaktime; \
-			for ( (_DATA_PTR) = (_DATA_PTR_TYPE)(&(_INPUT_TRACEPACK).trh2x + 1), (_DATA_PTR_END) = (_DATA_PTR_TYPE)(_DATA_PTR) + (_INPUT_TRACEPACK).trh2x.nsamp; \
-				(_DATA_PTR) < (_DATA_PTR_END); \
-				(_DATA_PTR) = (_DATA_PTR_TYPE)(_DATA_PTR) + 1, _tmp_time += (_TRACE_PTR)->delta \
-			) { \
-				(_TRACE_PTR)->average += 0.001 * (*(_DATA_PTR_TYPE)(_DATA_PTR) - (_TRACE_PTR)->average); \
-				*(_DATA_PTR_TYPE)(_DATA_PTR) -= (_TRACE_PTR)->average; \
-				if ( fabs(*(_DATA_PTR_TYPE)(_DATA_PTR)) > fabs((_OUTPUT_TRACEPEAK).peakvalue) ) { \
-					(_OUTPUT_TRACEPEAK).peakvalue = *(_DATA_PTR_TYPE)(_DATA_PTR); \
+			_DATA_PTR_TYPE _dataptr = (_DATA_PTR_TYPE)(&(_INPUT_TRACEPACK).trh2x + 1); \
+			_DATA_PTR_TYPE _dataptr_end = _dataptr + (_INPUT_TRACEPACK).trh2x.nsamp; \
+			for ( ; _dataptr < _dataptr_end; _dataptr++, _tmp_time += (_TRACE_PTR)->delta ) { \
+				(_TRACE_PTR)->average += 0.001 * (*_dataptr - (_TRACE_PTR)->average); \
+				*_dataptr -= (_TRACE_PTR)->average; \
+				if ( fabs(*_dataptr) > fabs((_OUTPUT_TRACEPEAK).peakvalue) ) { \
+					(_OUTPUT_TRACEPEAK).peakvalue = *_dataptr; \
 					(_OUTPUT_TRACEPEAK).peaktime = _tmp_time; \
 				} \
 			} \
@@ -100,8 +99,6 @@ int main ( int argc, char **argv )
 
 	_TRACEPEAK *traceptr;
 	TracePacket tracebuffer;  /* message which is sent to share ring    */
-	void       *dataptr;
-	void       *dataptr_end;
 	double      tmp_time;
 	const void *_match = NULL;
 	const void *_extra = NULL;
@@ -328,10 +325,10 @@ int main ( int argc, char **argv )
 				obuffer.peaktime  = tracebuffer.trh2x.starttime;
 			/* Go through all the data for 'double' precision type */
 				if ( tracebuffer.trh2x.datatype[1] == '8' )
-					FOR_EACH_TRACE_DATA_MAIN( dataptr, dataptr_end, double *, tracebuffer, traceptr, obuffer );
+					FOR_EACH_TRACE_DATA_MAIN( double *, tracebuffer, traceptr, obuffer );
 			/* Go through all the data for 'single' precision type */
 				else
-					FOR_EACH_TRACE_DATA_MAIN( dataptr, dataptr_end, float *, tracebuffer, traceptr, obuffer );
+					FOR_EACH_TRACE_DATA_MAIN( float *, tracebuffer, traceptr, obuffer );
 
 			/* Wait for the D.C. */
 				if ( traceptr->readycount < DriftCorrectThreshold ) {
