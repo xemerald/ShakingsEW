@@ -24,7 +24,7 @@ extern volatile uint16_t nIntensity;
 /*
  *
  */
-int shake2ws_protocols_map_shake(
+int sk2ws_protocols_map_shake(
 	struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len
 ) {
 	int    i;
@@ -142,7 +142,7 @@ int shake2ws_protocols_map_shake(
 /*
  *
  */
-int shake2ws_protocols_station_shake(
+int sk2ws_protocols_station_shake(
 	struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len
 ) {
 	int    i;
@@ -232,7 +232,7 @@ int shake2ws_protocols_station_shake(
 /*
  *
  */
-int shake2ws_protocols_station_status(
+int sk2ws_protocols_station_status(
 	struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len
 ) {
 	int    i;

@@ -4,10 +4,10 @@ MODULES = \
 	peak2trig \
 	postshake \
 	respectra \
-	trace2peak \
 	shakemap \
 	shake2redis \
 	shake2ws \
+	trace2peak
 
 #####################
 # Top level targets #
@@ -52,7 +52,7 @@ unix_modules_v710: MAKING_MODULES_MESSAGE
 clean_unix: PHONY
 	-@cd src/libsrc && \
 		echo Cleaning in: `pwd` ; \
-		$(MAKE) -f makefile.unix clean_obj
+		$(MAKE) -f makefile.unix clean
 	-@for x in $(MODULES) ; \
 	do ( \
 		cd src/$$x && \

@@ -44,36 +44,36 @@ enum shake_protocols {
         }
 
 /* Map view shaking */
-int shake2ws_protocols_map_shake( struct lws *, enum lws_callback_reasons, void *, void *, size_t );
+int sk2ws_protocols_map_shake( struct lws *, enum lws_callback_reasons, void *, void *, size_t );
 /* */
 #define SHAKE2WS_LWS_PROTOCOL_MAP_SHAKE \
         { \
             "map-shake-protocol", \
-            shake2ws_protocols_map_shake, \
+            sk2ws_protocols_map_shake, \
             sizeof(struct per_session_data), \
             16384, \
             0, NULL, 0 \
         }
 
 /* Individual station shaking */
-int shake2ws_protocols_station_shake( struct lws *, enum lws_callback_reasons, void *, void *, size_t );
+int sk2ws_protocols_station_shake( struct lws *, enum lws_callback_reasons, void *, void *, size_t );
 /* */
 #define SHAKE2WS_LWS_PROTOCOL_STATION_SHAKE \
         { \
             "station-shake-protocol", \
-            shake2ws_protocols_station_shake, \
+            sk2ws_protocols_station_shake, \
             sizeof(struct per_session_data), \
             32, \
             0, NULL, 0 \
         }
 
 /* Status for alive or not */
-int shake2ws_protocols_station_status( struct lws *, enum lws_callback_reasons, void *, void *, size_t );
+int sk2ws_protocols_station_status( struct lws *, enum lws_callback_reasons, void *, void *, size_t );
 /* */
 #define SHAKE2WS_LWS_PROTOCOL_STATION_STATUS \
     { \
         "station-status-protocol", \
-        shake2ws_protocols_station_status, \
+        sk2ws_protocols_station_status, \
         sizeof(struct per_session_data), \
         16384, \
         0, NULL, 0 \
