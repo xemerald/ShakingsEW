@@ -67,16 +67,7 @@ static uint8_t TypeTracePeak = 0;
 #define  ERR_QUEUE         3   /* error queueing message for sending      */
 static char Text[150];         /* string for log/error messages          */
 
-#define FOR_EACH_TRACE_DATA_AVG(_DATA_PTR, _DATA_PTR_END, _DATA_PTR_TYPE, _INPUT_TRACEPACK, _TRACE_PTR) \
-		__extension__({ \
-			for ( (_DATA_PTR) = (_DATA_PTR_TYPE)(&(_INPUT_TRACEPACK).trh2x + 1), (_DATA_PTR_END) = (_DATA_PTR_TYPE)(_DATA_PTR) + (_INPUT_TRACEPACK).trh2x.nsamp; \
-				(_DATA_PTR) < (_DATA_PTR_END); \
-				(_DATA_PTR) = (_DATA_PTR_TYPE)(_DATA_PTR) + 1 \
-			) { \
-				(_TRACE_PTR)->average += 0.001 * (*(_DATA_PTR_TYPE)(_DATA_PTR) - (_TRACE_PTR)->average); \
-			} \
-		})
-
+/* Main process macro */
 #define FOR_EACH_TRACE_DATA_MAIN(_DATA_PTR, _DATA_PTR_END, _DATA_PTR_TYPE, _INPUT_TRACEPACK, _TRACE_PTR, _OUTPUT_TRACEPEAK) \
 		__extension__({ \
 			double _tmp_time = (_OUTPUT_TRACEPEAK).peaktime; \
@@ -332,23 +323,6 @@ int main ( int argc, char **argv )
 
 			/* Record the time that the trace last updated */
 				traceptr->lasttime = tracebuffer.trh2x.endtime;
-			/* Wait for the D.C. */
-				if ( traceptr->readycount < DriftCorrectThreshold ) {
-					traceptr->readycount += (uint16_t)(tracebuffer.trh2x.nsamp / tracebuffer.trh2x.samprate + 0.5);
-					if ( tracebuffer.trh2x.datatype[1] == '8' )
-						FOR_EACH_TRACE_DATA_AVG( dataptr, dataptr_end, double *, tracebuffer, traceptr );
-					else
-						FOR_EACH_TRACE_DATA_AVG( dataptr, dataptr_end, float *, tracebuffer, traceptr );
-
-					if ( traceptr->readycount >= DriftCorrectThreshold ) {
-						printf(
-							"trace2peak: %s.%s.%s.%s initialization of D.C. complete!\n",
-							tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc
-						);
-					}
-					continue;
-				}
-
 			/* Reset the peak value & its time */
 				obuffer.peakvalue = 0.0;
 				obuffer.peaktime  = tracebuffer.trh2x.starttime;
@@ -358,6 +332,18 @@ int main ( int argc, char **argv )
 			/* Go through all the data for 'single' precision type */
 				else
 					FOR_EACH_TRACE_DATA_MAIN( dataptr, dataptr_end, float *, tracebuffer, traceptr, obuffer );
+
+			/* Wait for the D.C. */
+				if ( traceptr->readycount < DriftCorrectThreshold ) {
+					traceptr->readycount += (uint16_t)(tracebuffer.trh2x.nsamp / tracebuffer.trh2x.samprate + 0.5);
+					if ( traceptr->readycount >= DriftCorrectThreshold ) {
+						printf(
+							"trace2peak: %s.%s.%s.%s initialization of D.C. complete!\n",
+							tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc
+						);
+					}
+					continue;
+				}
 
 			/* Packing the output message */
 				memcpy(obuffer.sta, traceptr->sta, TRACE2_STA_LEN);
