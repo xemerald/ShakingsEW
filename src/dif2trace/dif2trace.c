@@ -337,10 +337,11 @@ int main ( int argc, char **argv )
 
 			/* Record the time that the trace last updated */
 				traceptr->lasttime = tracebuffer.trh2x.endtime;
+			/* Remove the average before real process */
+				operation_rmavg( traceptr, &tracebuffer );
 			/* Wait for the D.C. */
 				if ( traceptr->readycount >= DriftCorrectThreshold ) {
 				/* */
-					operation_rmavg( traceptr, &tracebuffer );
 					operationfunc( traceptr, &tracebuffer );
 				/* Modify the trace header to indicate that the data already been processed */
 					tracebuffer.trh2x.pinno += operationdirc;
@@ -354,8 +355,6 @@ int main ( int argc, char **argv )
 				else {
 					traceptr->readycount += (uint16_t)(tracebuffer.trh2x.nsamp / tracebuffer.trh2x.samprate + 0.5);
 				/* */
-					operation_rmavg( traceptr, &tracebuffer );
-
 					if ( traceptr->readycount >= DriftCorrectThreshold ) {
 						printf(
 							"dif2trace: SCNL %s.%s.%s.%s initialization of D.C. complete!\n",
