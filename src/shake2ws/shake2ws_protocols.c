@@ -18,7 +18,6 @@ static void init_per_session_data( struct per_session_data * );
 static void destroy_per_session_data( struct per_session_data * );
 
 /* */
-extern volatile time_t   TimeListChanged;
 extern volatile uint16_t nPeakValue;
 extern volatile uint16_t nIntensity;
 
@@ -60,18 +59,18 @@ int shake2ws_protocols_map_shake(
 		if ( pss->totalsta && payload != NULL ) {
 			if ( (timenow - pss->lasttime) >= 1 ) {
 				payload_ptr = payload + LWS_PRE;
-				if ( TimeListChanged > pss->listtime ) {
+				if ( sk2ws_list_timestamp_get() > pss->listtime ) {
 				/* Re-map the station list */
 					if ( pss->stapeak != NULL ) {
 						free(pss->stapeak);
 						pss->stapeak = NULL;
 					}
-					if ( !shake2ws_list_list_map( &pss->stapeak, NULL, pss->savemsg, pss->msg_size ) ) {
+					if ( !sk2ws_list_list_map( &pss->stapeak, NULL, pss->savemsg, pss->msg_size ) ) {
 						logit("e", "shake2ws: Can't map station list for Client:%s in MAP_SHAKE.\n", pss->ip);
 						lws_close_reason(wsi, LWS_CLOSE_STATUS_UNEXPECTED_CONDITION, NULL, 0);
 						return -1;
 					}
-					pss->listtime = TimeListChanged;
+					pss->listtime = sk2ws_list_timestamp_get();
 				}
 				for ( i = 0; i < pss->totalsta; i++ ) {
 					_stapeak = ((STATION_PEAK **)pss->stapeak)[i];
@@ -100,9 +99,9 @@ int shake2ws_protocols_map_shake(
 	/* */
 		if ( lws_is_final_fragment(wsi) ) {
 			pss->lasttime = timenow;
-			pss->totalsta = shake2ws_list_list_map( &pss->stapeak, tagbuf, pss->savemsg, pss->msg_size );
+			pss->totalsta = sk2ws_list_list_map( &pss->stapeak, tagbuf, pss->savemsg, pss->msg_size );
 			pss->peak_i   = atoi(tagbuf);
-			pss->listtime = TimeListChanged;
+			pss->listtime = sk2ws_list_timestamp_get();
 		/* */
 			if ( pss->totalsta && pss->peak_i < nIntensity ) {
 				if ( payload == NULL || payload_size < (size_t)(LWS_PRE + pss->totalsta + 1) ) {
@@ -186,10 +185,10 @@ int shake2ws_protocols_station_shake(
 	case LWS_CALLBACK_SERVER_WRITEABLE:
 		if ( pss->totalsta ) {
 			if ( (timenow - pss->lasttime) >= 1 ) {
-				if ( TimeListChanged > pss->listtime ) {
+				if ( sk2ws_list_timestamp_get() > pss->listtime ) {
 				/* Re-map the station link */
-					pss->stapeak  = shake2ws_list_station_map( (char *)pss->savemsg, "TW", "--" );
-					pss->listtime = TimeListChanged;
+					pss->stapeak  = sk2ws_list_station_map( (char *)pss->savemsg, "TW", "--" );
+					pss->listtime = sk2ws_list_timestamp_get();
 				}
 				for ( i = 0; i < nPeakValue; i++ )
 					*((double *)payload_ptr + i) = ((STATION_PEAK *)pss->stapeak)->pvalue[i];
@@ -209,8 +208,8 @@ int shake2ws_protocols_station_shake(
 	/* */
 		memcpy(pss->savemsg, in, len);
 		((char *)pss->savemsg)[len] = '\0';
-		pss->stapeak  = shake2ws_list_station_map( (char *)pss->savemsg, "TW", "--" );
-		pss->listtime = TimeListChanged;
+		pss->stapeak  = sk2ws_list_station_map( (char *)pss->savemsg, "TW", "--" );
+		pss->listtime = sk2ws_list_timestamp_get();
 		pss->peak_i   = nPeakValue;
 		pss->totalsta = 1;
 		pss->lasttime = timenow;
@@ -271,18 +270,18 @@ int shake2ws_protocols_station_status(
 				payload_ptr    = (uint32_t *)(payload + LWS_PRE);
 				*payload_ptr++ = pss->seq;
 			/* */
-				if ( TimeListChanged > pss->listtime ) {
+				if ( sk2ws_list_timestamp_get() > pss->listtime ) {
 				/* Re-map the station list */
 					if ( pss->stapeak != NULL ) {
 						free(pss->stapeak);
 						pss->stapeak = NULL;
 					}
-					if ( !shake2ws_list_list_map( &pss->stapeak, NULL, pss->savemsg, pss->msg_size ) ) {
+					if ( !sk2ws_list_list_map( &pss->stapeak, NULL, pss->savemsg, pss->msg_size ) ) {
 						logit("e", "shake2ws: Can't map station list for Client:%s in STATION_STATUS.\n", pss->ip);
 						lws_close_reason(wsi, LWS_CLOSE_STATUS_UNEXPECTED_CONDITION, NULL, 0);
 						return -1;
 					}
-					pss->listtime = TimeListChanged;
+					pss->listtime = sk2ws_list_timestamp_get();
 				}
 				for ( i = 0; i < pss->totalsta; i++ ) {
 					_stapeak = ((STATION_PEAK **)pss->stapeak)[i];
@@ -330,8 +329,8 @@ int shake2ws_protocols_station_status(
 	/* */
 		if ( lws_is_final_fragment(wsi) ) {
 			pss->peak_i   = nPeakValue;
-			pss->totalsta = shake2ws_list_list_map( &pss->stapeak, NULL, pss->savemsg, pss->msg_size );
-			pss->listtime = TimeListChanged;
+			pss->totalsta = sk2ws_list_list_map( &pss->stapeak, NULL, pss->savemsg, pss->msg_size );
+			pss->listtime = sk2ws_list_timestamp_get();
 		/* */
 			if ( pss->totalsta ) {
 				if ( payload == NULL || payload_size < (size_t)(LWS_PRE + sizeof(uint32_t) * pss->totalsta + 1) ) {
