@@ -8,7 +8,8 @@
 *.a
 *.so
 
-# Ignore the execute files.
+# Ignore the pgplot build folder.
+src/**/build/
 
 # Ignore DB Pass.
 .dbpass
