@@ -15,7 +15,7 @@ EWLIBS = $(EW_LIBDIR)/lockfile_ew.o $(EW_LIBDIR)/lockfile.o \
          $(EW_LIBDIR)/mem_circ_queue.o $(EW_LIBDIR)/libew_mt.a \
 		 $(EW_LIBDIR)/swap.o
 
-LCLIBS = $(LC_LIBDIR)/libshakings.a $(LC_LIBDIR)/libdblist.a
+LCLIBS = $(LC_LIBDIR)/libshakings.a
 
 #
 #
@@ -36,6 +36,7 @@ cf2trace: $(OBJS)
 %_sql: CFLAGS+=-I/usr/include/mysql
 %_sql: CFLAGS+=-D_USE_SQL
 %_sql: LIBS+=-lmysqlclient
+%_sql: LCLIBS+=$(LC_LIBDIR)/libdblist.a
 
 #
 # Compile rule for Earthworm version under 7.09

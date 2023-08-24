@@ -43,6 +43,7 @@ unix_modules: MAKING_MODULES_MESSAGE
 		cd src/$$x && \
 			echo ---------- ; \
 			echo Making $@ in: `pwd` ; \
+			$(MAKE) -f makefile.unix clean || exit "$$?" ; \
 			$(MAKE) -f makefile.unix ver_710 || exit "$$?" ; \
 			cd - ; \
 	done
@@ -61,7 +62,9 @@ unix_modules_sql: MAKING_MODULES_MESSAGE
 clean_unix: PHONY
 	-@cd src/libsrc && \
 		echo Cleaning in: `pwd` ; \
-		$(MAKE) -f makefile.unix clean
+		$(MAKE) -f makefile.unix clean ; \
+		echo Cleaning libraries in: `pwd` ; \
+		$(MAKE) -f makefile.unix clean_lib
 	-@for x in $(MODULES) ; \
 	do ( \
 		cd src/$$x && \
@@ -70,9 +73,6 @@ clean_unix: PHONY
 	) ; done
 
 clean_bin_unix: PHONY
-	-@cd src/libsrc && \
-		echo Cleaning libraries in: `pwd` ; \
-		$(MAKE) -f makefile.unix clean_lib
 	-@for x in $(MODULES) ; \
 	do ( \
 		cd src/$$x && \
