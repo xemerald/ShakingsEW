@@ -14,7 +14,7 @@ LC_LIBDIR = ../../lib
 EWLIBS = $(EW_LIBDIR)/lockfile_ew.o $(EW_LIBDIR)/lockfile.o \
          $(EW_LIBDIR)/mem_circ_queue.o $(EW_LIBDIR)/libew_mt.a
 
-LCLIBS = $(LC_LIBDIR)/libshakings.a $(LC_LIBDIR)/libdl_chain_list.a
+LCLIBS = $(LC_LIBDIR)/libshakings.a
 
 #
 #

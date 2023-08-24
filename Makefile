@@ -2,12 +2,12 @@ MODULES = \
 	cf2trace \
 	dif2trace \
 	peak2trig \
-	postshake \
 	respectra \
-	shakemap \
 	shake2redis \
 	shake2ws \
 	trace2peak
+#	postshake
+#	shakemap
 
 MODULES_DB = \
 	cf2trace \

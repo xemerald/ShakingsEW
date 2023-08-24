@@ -9,10 +9,13 @@
 MODULES="cf2trace \
 	dif2trace \
 	peak2trig \
-	postshake \
-	shakemap \
+	respectra \
+	shake2redis \
 	shake2ws \
 	trace2peak"
+
+#	shakemap
+#	postshake
 
 if [ $EW_VERSION ]; then
 	echo "Earthworm version is $EW_VERSION."
