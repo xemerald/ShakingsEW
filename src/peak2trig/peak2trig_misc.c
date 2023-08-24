@@ -8,7 +8,7 @@
 /*
  * peak2trig_misc_snl_compare() - the SCNL compare function of binary tree search
  */
-int peak2trig_misc_snl_compare( const void *a, const void *b )
+int pk2trig_misc_snl_compare( const void *a, const void *b )
 {
 	_STAINFO *tmpa = (_STAINFO *)a;
 	_STAINFO *tmpb = (_STAINFO *)b;

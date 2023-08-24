@@ -23,8 +23,11 @@
  *
  * -Trigger list header
  *     -Station trigger information block
+ *       -Extra station trigger block (Optional)
  *     -Station trigger information block
+ *       -Extra station trigger block (Optional)
  *     -Station trigger information block
+ *       -Extra station trigger block (Optional)
  *              .
  *              .
  *              .
@@ -32,9 +35,9 @@
  */
 
  /* For triggered type flag */
- typedef enum {
- 	TRIG_BY_HYPO,
+typedef enum {
 	TRIG_BY_PEAK_CLUSTER,
+	TRIG_BY_PICK_CLUSTER,
 	/* Maybe else... */
 
 /* Should always be the last */
@@ -51,45 +54,55 @@ typedef enum {
 	CODA_FLAG_COUNT
 } CODA_FLAG;
 
+#define MAX_TRIG_PHASE_LEN  9
+
 /*
  * Definition of trigger list header, total size is 48 bytes
  */
 typedef struct {
+	uint32_t tid;
+	uint32_t trigseq;
 	uint16_t trigtype;
 	uint16_t codaflag;
-	uint32_t trigstations;
-	double   origintime;
+	uint32_t ntrigsta;
+	uint32_t tsize;
+	uint32_t blockseq;
+	uint32_t totalblock;
+	uint8_t  padding[4];
+	double   firsttime;
 	double   trigtime;
-	double   latitude;
-	double   longitude;
-	double   depth;
 } TRIGLIST_HEADER;
 
 /*
- * Definition of Station triggered information, total size is 48 bytes
+ * Definition of Station triggered information, total size is 80 bytes
  */
 typedef struct {
-	char     sta[TRACE2_STA_LEN];   /* Site name (NULL-terminated)     */
-	char     net[TRACE2_NET_LEN];   /* Network name (NULL-terminated)  */
-	char     loc[TRACE2_LOC_LEN];   /* Location code (NULL-terminated) */
-	char     pchan[TRACE2_CHAN_LEN];
+	char     sta[TRACE2_STA_LEN];        /* Site name (NULL-terminated)     */
+	char     net[TRACE2_NET_LEN];        /* Network name (NULL-terminated)  */
+	char     loc[TRACE2_LOC_LEN];        /* Location code (NULL-terminated) */
+	char     chan[TRACE2_CHAN_LEN];      /* Trigger channel code (NULL-terminated) */
+	char     phase[MAX_TRIG_PHASE_LEN];  /* Trigger phase name (NULL-terminated)   */
 
-	uint8_t  padding[5];   /* Padding? */
-	uint16_t seq;          /* Sequence number of station      */
-	uint16_t datatype;     /* Flag for record type            */
-	double   ptime;        /* Time of peak sample or pick time in epoch seconds               */
-	double   pvalue;       /* Peak value in this triggered station or weighting for this pick */
-} TRIG_STATION;
+	double   latitude;    /* Latitude of station */
+	double   longitude;   /* Longitude of station */
+	double   elevation;   /* Elevation of station */
+	double   ptime;       /* Time of peak sample or pick time in epoch seconds      */
+	double   pvalue;      /* Peak value in this triggered station of data weighting */
+
+	uint8_t  flag[2];     /* Simple flags for optional usage */
+	uint8_t  update_seq;  /* Updating sequence number                               */
+	uint8_t  datatype;    /* Flag for peak value record type                        */
+	uint16_t extra_size;  /* */
+	uint16_t next_pos;    /* */
+} TRIGLIST_STATION;
 
 /*
  * Definition of a generic Stations List Packet
  */
-#define MAX_TRIGLIST_SIZ  65536  /* define maximum size of trigger list message */
+#define MAX_TRIGLIST_SIZ     65536  /* define maximum size of trigger list message */
+#define MAX_TRIGSTATION_NUM  818    /* define maximum stations inside trigger list message */
 
 typedef union {
     uint8_t         msg[MAX_TRIGLIST_SIZ];
     TRIGLIST_HEADER tlh;
 } TrigListPacket;
-
-#define TRIGLIST_SIZE_GET(TLH) \
-		(sizeof(TRIGLIST_HEADER) + (TLH)->trigstations * sizeof(TRIG_STATION))

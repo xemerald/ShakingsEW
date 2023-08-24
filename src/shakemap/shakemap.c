@@ -251,8 +251,8 @@ int main ( int argc, char **argv )
 				if ( reclogo.type == TypeTrigList ) {
 				/* Check the received message is what we set in the configfile */
 					if ( tlist.tlh.trigtype == TriggerAlgType ) {
-						TRIG_STATION *tsta = (TRIG_STATION *)(&tlist.tlh + 1);
-						TRIG_STATION *tstaend = tsta + tlist.tlh.trigstations;
+						TRIGLIST_STATION *tsta = (TRIGLIST_STATION *)(&tlist.tlh + 1);
+						TRIGLIST_STATION *tstaend = tsta + tlist.tlh.trigstations;
 
 						for ( ; tsta < tstaend; tsta++ ) {
 							if ( (staptr = shakemap_list_find( tsta->sta, tsta->net, tsta->loc )) == NULL ) {

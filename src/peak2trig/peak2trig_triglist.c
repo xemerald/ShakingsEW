@@ -3,7 +3,8 @@
 #include <stdlib.h>
 #include <time.h>
 #include <math.h>
-#include <float.h>
+/* */
+#include <earthworm.h>
 /* Local header include */
 #include <dl_chain_list.h>
 #include <tracepeak.h>
@@ -11,26 +12,25 @@
 #include <geogfunc.h>
 #include <peak2trig.h>
 #include <peak2trig_misc.h>
+#include <peak2trig_list.h>
 #include <peak2trig_triglist.h>
+
 /* */
 typedef struct {
-	int     count;      /* Number of clients in the list */
-	time_t  timestamp;  /* Time of the last time updated */
-	void   *entry;      /* Pointer to first client       */
-	void   *tail;        /* Pointer to last client        */
-} TrigList;
+	int      count;      /* Number of clients in the list */
+	DL_NODE *entry;      /* Pointer to first client       */
+	DL_NODE *tail;       /* Pointer to last client        */
+} _TrigList;
 
 /* Local function prototype */
-static void   reset_cluster( const void * );
+static int    is_station_clustered( const TRIG_STA * );
+static void   reset_station_cluster( TRIG_STA * );
 static double get_station_dist( const void *, const void * );
 /* */
-static TRIG_STA *Head = NULL;      /* First pointer of the linked list. */
-static TRIG_STA *Tail = NULL;      /* Last pointer of the linked list. */
-static uint32_t  ListLength = 0;   /* Length of the linked list. */
-static TrigList  TList = { 0, 0, NULL, NULL };
+static _TrigList PeakPool = { 0, NULL, NULL };
 
 /*
- * peak2trig_tlist_insert() - Search the key in the linked list, when there
+ * pk2trig_tlist_search() - Search the key in the linked list, when there
  *                            is not, insert it.
  * Arguments:
  *   key   = Key to search.
@@ -38,25 +38,29 @@ static TrigList  TList = { 0, 0, NULL, NULL };
  *    NULL = Something error.
  *   !NULL = The pointer of the key.
  */
-TRIG_STA *peak2trig_tlist_insert( const _STAINFO *key )
+TRIG_STA *pk2trig_tlist_search( const TRACE_PEAKVALUE *key )
 {
 	TRIG_STA *tsta = NULL;
+	_STAINFO *staptr = NULL;
 
 /* */
-	if ( (tsta = peak2trig_tlist_find( key )) == NULL ) {
+	if ( (staptr = peak2trig_list_find( key )) != NULL && (tsta = pk2trig_tlist_find( key )) == NULL ) {
 	/* */
 		if ( (tsta = calloc(1, sizeof(TRIG_STA))) != NULL ) {
-			tsta->staptr = (_STAINFO *)key;
-			TList.tail = dl_node_append( &TList.entry, tsta );
-			TList.count++;
+			tsta->staptr = staptr;
+			PeakPool.tail = dl_node_append( &PeakPool.entry, tsta );
+			PeakPool.count++;
+		}
+		else {
+			logit("e", "peak2trig: Error insert new %s.%s.%s into trigger list.\n", staptr->sta, staptr->net, staptr->loc);
 		}
 	}
 
-	return tsta;
+	return tsta != NULL ? pk2trig_tlist_update( tsta, key ) : NULL;
 }
 
 /*
- * peak2trig_tlist_find() - Search the key in the linked list, when there
+ * pk2trig_tlist_find() - Search the key in the linked list, when there
  *                          is not, insert it.
  * Arguments:
  *   key   = Key to find.
@@ -64,14 +68,19 @@ TRIG_STA *peak2trig_tlist_insert( const _STAINFO *key )
  *    NULL = No result or something error.
  *   !NULL = The pointer of the key.
  */
-TRIG_STA *peak2trig_tlist_find( const _STAINFO *key )
+TRIG_STA *pk2trig_tlist_find( const TRACE_PEAKVALUE *tpv )
 {
 	DL_NODE  *current = NULL;
 	TRIG_STA *tsta = NULL;
+	_STAINFO  key;
 
 /* */
-	DL_LIST_FOR_EACH_DATA(TList.entry, current, tsta) {
-		if ( peak2trig_misc_snl_compare( tsta->staptr, key ) == 0 )
+	memcpy(key.sta, tpv->sta, TRACE2_STA_LEN);
+	memcpy(key.net, tpv->net, TRACE2_NET_LEN);
+	memcpy(key.loc, tpv->loc, TRACE2_LOC_LEN);
+/* */
+	DL_LIST_FOR_EACH_DATA(PeakPool.entry, current, tsta) {
+		if ( pk2trig_misc_snl_compare( tsta->staptr, &key ) == 0 )
 			return tsta;
 	}
 
@@ -79,7 +88,7 @@ TRIG_STA *peak2trig_tlist_find( const _STAINFO *key )
 }
 
 /*
- * peak2trig_tlist_delete() - Search the key in the linked list, when there
+ * pk2trig_tlist_delete() - Search the key in the linked list, when there
  *                            is not, insert it.
  * Arguments:
  *   key   = Key to delete.
@@ -87,26 +96,31 @@ TRIG_STA *peak2trig_tlist_find( const _STAINFO *key )
  * Returns:
  *   None.
  */
-TRIG_STA *peak2trig_tlist_delete( const _STAINFO *key )
+TRIG_STA *pk2trig_tlist_delete( const TRACE_PEAKVALUE *tpv )
 {
 	DL_NODE  *current = NULL;
 	TRIG_STA *tsta = NULL;
+	_STAINFO  key;
 
 /* */
-	DL_LIST_FOR_EACH_DATA(TList.entry, current, tsta) {
-		if ( peak2trig_misc_snl_compare( tsta->staptr, key ) == 0 ) {
+	memcpy(key.sta, tpv->sta, TRACE2_STA_LEN);
+	memcpy(key.net, tpv->net, TRACE2_NET_LEN);
+	memcpy(key.loc, tpv->loc, TRACE2_LOC_LEN);
+/* */
+	DL_LIST_FOR_EACH_DATA(PeakPool.entry, current, tsta) {
+		if ( pk2trig_misc_snl_compare( tsta->staptr, &key ) == 0 ) {
 			current = dl_node_delete( current, free );
 			if ( current->prev == NULL )
-				TList.entry = current;
+				PeakPool.entry = current;
 			if ( current->next == NULL )
-				TList.tail = current;
-			TList.count--;
+				PeakPool.tail = current;
+			PeakPool.count--;
 			break;
 		}
 	}
 
 /* */
-	return current;
+	return tsta;
 }
 
 /*
@@ -118,7 +132,7 @@ TRIG_STA *peak2trig_tlist_delete( const _STAINFO *key )
  * Returns:
  *   None.
  */
-TRIG_STA *peak2trig_tlist_update( TRIG_STA *target, const TRACE_PEAKVALUE *new  )
+TRIG_STA *pk2trig_tlist_update( TRIG_STA *target, const TRACE_PEAKVALUE *new )
 {
 	if ( new->peaktime > target->peaktime ) {
 		memcpy(target->peakchan, new->chan, TRACE2_CHAN_LEN);
@@ -138,9 +152,9 @@ TRIG_STA *peak2trig_tlist_update( TRIG_STA *target, const TRACE_PEAKVALUE *new  
  * Returns:
  *   >= 0 = The length of the trigger list.
  */
-int peak2trig_tlist_len_get( void )
+int pk2trig_tlist_len_get( void )
 {
-	return TList.count;
+	return PeakPool.count;
 }
 
 /*
@@ -155,20 +169,20 @@ int peak2trig_tlist_len_get( void )
  *    0   = There is not any clustered station.
  *   >0   = There are such number of clustered stations.
  */
-int peak2trig_tlist_cluster( const double dist, const double sec )
+int pk2trig_tlist_cluster( const double dist, const double sec )
 {
 	int       i, j;
 	int       result = 0;
-	TRIG_STA *node1  = Head;
-	TRIG_STA *node2  = NULL;
+	DL_NODE  *current1, *current2;
+	TRIG_STA *node1, *node2;
 
 /* */
-	if ( node1 == NULL )
+	if ( PeakPool.entry == NULL )
 		return 0;
 /* */
-	peak2trig_tlist_walk( reset_cluster );
+	pk2trig_tlist_walk( reset_station_cluster );
 /* Go thru all the stations in the triggered list now */
-	while ( node1 != NULL ) {
+	DL_LIST_FOR_EACH_DATA( PeakPool.entry, current1, node1 ) {
 	/* Find out is there any empty space in node1 to store the clustered station */
 		for ( i = 0; i < CLUSTER_NUM; i++ )
 			if ( node1->cluster[i] == NULL )
@@ -176,8 +190,7 @@ int peak2trig_tlist_cluster( const double dist, const double sec )
 	/* */
 		if ( i < (int)CLUSTER_NUM ) {
 		/* Go thru all the stations again except the previous part, for clustering */
-			node2 = Head;
-			while ( node2 != NULL ) {
+			DL_LIST_FOR_EACH_DATA( PeakPool.entry, current2, node2 ) {
 			/* Skip the same station */
 				if ( node2 != node1 ) {
 				/* Find out is there any empty space in node2 to store the clustered station */
@@ -191,9 +204,9 @@ int peak2trig_tlist_cluster( const double dist, const double sec )
 				/* Check if these two stations is fitting the criteria or not: */
 					if (
 						j <= CLUSTER_NUM &&
-					/* These two stations peak occurrence time difference is less than assume seconds */
+					/* These two stations peak occurrence time difference is less than assuming seconds */
 						fabs(node1->peaktime - node2->peaktime) <= sec &&
-					/* These two stations' distance is less than assume distance(km) */
+					/* These two stations' distance is less than assuming distance(km) */
 						get_station_dist( node1, node2 ) <= dist
 					) {
 						node1->cluster[i] = node2;
@@ -207,15 +220,11 @@ int peak2trig_tlist_cluster( const double dist, const double sec )
 							break;
 					}
 				}
-			/* Next node */
-				node2 = node2->next;
 			}
 		}
 	/* Once the station meet the threshold for cluster, add one to the triggered number */
 		if ( i >= (int)CLUSTER_NUM )
 			result++;
-	/* Next node */
-		node1 = node1->next;
 	}
 
 	return result;
@@ -230,7 +239,7 @@ int peak2trig_tlist_cluster( const double dist, const double sec )
  * Returns:
  *   None.
  */
-void peak2trig_tlist_walk( void (*action)( const void * ) )
+void pk2trig_tlist_walk( void (*action)( TRIG_STA * ) )
 {
 	DL_NODE  *current = NULL;
 	TRIG_STA *tsta = NULL;
@@ -239,7 +248,7 @@ void peak2trig_tlist_walk( void (*action)( const void * ) )
 	if ( action == NULL )
 		return;
 /* */
-	DL_LIST_FOR_EACH_DATA(TList.entry, current, tsta) {
+	DL_LIST_FOR_EACH_DATA( PeakPool.entry, current, tsta ) {
 		action( tsta );
 	}
 
@@ -254,7 +263,7 @@ void peak2trig_tlist_walk( void (*action)( const void * ) )
  * Returns:
  *   None.
  */
-void peak2trig_tlist_time_filter( const double sec )
+void pk2trig_tlist_time_filter( const double sec )
 {
 	time_t    timenow;
 	DL_NODE  *current = NULL;
@@ -264,14 +273,14 @@ void peak2trig_tlist_time_filter( const double sec )
 /* */
 	time(&timenow);
 /* */
-	DL_LIST_FOR_EACH_DATA_SAFE(TList.entry, current, tsta, safe) {
+	DL_LIST_FOR_EACH_DATA_SAFE( PeakPool.entry, current, tsta, safe ) {
 		if ( fabs((double)timenow - tsta->peaktime) > sec ) {
 			current = dl_node_delete( current, free );
 			if ( current->prev == NULL )
-				TList.entry = current;
+				PeakPool.entry = current;
 			if ( current->next == NULL )
-				TList.tail = current;
-			TList.count--;
+				PeakPool.tail = current;
+			PeakPool.count--;
 		}
 	}
 
@@ -287,73 +296,49 @@ void peak2trig_tlist_time_filter( const double sec )
  * Returns:
  *   None.
  */
-int peak2trig_tlist_pack( void *msg, size_t maxsize, const uint8_t trig_flag )
+int pk2trig_tlist_pack( TrigListPacket *tlbuffer, const int max_tl_sta )
 {
-	int i;
-
-	TRIG_STA            *posepic = NULL;   /* Pointer to the possible epicenter station */
-	TRIGLIST_HEADER     *tlh     = (TRIGLIST_HEADER *)msg;
-	TRIG_STATION        *tsta    = (TRIG_STATION *)(tlh + 1);
-	TRIG_STATION * const msgend  = (TRIG_STATION *)((uint8_t *)msg + maxsize);
-	DL_NODE  *current = NULL;
-	TRIG_STA *tsta = NULL;
-
-	uint32_t trigstations = 0;
-	time_t   timenow;
+	TRIGLIST_STATION *tl_sta  = (TRIGLIST_STATION *)(&tlbuffer->tlh + 1);
+	DL_NODE      *current = NULL;
+	TRIG_STA     *_tsta   = NULL;
+	int           ntsta   = 0;
 
 /* */
-	if ( current == NULL || tlh == NULL )
+	if ( PeakPool.entry == NULL )
 		return -1;
-/* Mark trigger generated time */
-	time(&timenow);
-	tlh->trigtime = (double)timenow;
 /* */
-
-/* */
-	DL_LIST_FOR_EACH_DATA( TList.entry, current, tsta ) {	
-		for ( i = 0; i < CLUSTER_NUM; i++ )
-			if ( current->cluster[i] == NULL )
-				break;
+	DL_LIST_FOR_EACH_DATA( PeakPool.entry, current, _tsta ) {
 	/* */
-		if ( i >= (int)CLUSTER_NUM ) {
-			if ( (tsta + 1) >= msgend )
-				return -2;
-			if ( posepic == NULL )
-				posepic = current;
-
-			memcpy(tsta->sta, current->staptr->sta, TRACE2_STA_LEN);
-			memcpy(tsta->net, current->staptr->net, TRACE2_NET_LEN);
-			memcpy(tsta->loc, current->staptr->loc, TRACE2_LOC_LEN);
-			memcpy(tsta->pchan, current->peakchan, TRACE2_CHAN_LEN);
-			tsta->seq      = trigstations++;
-			tsta->datatype = current->recordtype;
-			tsta->ptime    = current->peaktime;
-			tsta->pvalue   = current->peakvalue;
-		/* Possible epicenter station */
-			if ( current->peaktime < posepic->peaktime )
-				posepic = current;
+		if ( is_station_clustered( _tsta ) ) {
+		/* */
+			memcpy(tl_sta->sta, _tsta->staptr->sta, TRACE2_STA_LEN);
+			memcpy(tl_sta->net, _tsta->staptr->net, TRACE2_NET_LEN);
+			memcpy(tl_sta->loc, _tsta->staptr->loc, TRACE2_LOC_LEN);
+			memcpy(tl_sta->chan, _tsta->peakchan, TRACE2_CHAN_LEN);
+			tl_sta->latitude   = _tsta->staptr->latitude;
+			tl_sta->longitude  = _tsta->staptr->longitude;
+			tl_sta->elevation  = _tsta->staptr->elevation;
+			tl_sta->ptime      = _tsta->peaktime;
+			tl_sta->pvalue     = _tsta->peakvalue;
+			tl_sta->flag[0]    = 0;
+			tl_sta->flag[1]    = 0;
+			tl_sta->update_seq = 0;
+			tl_sta->datatype   = _tsta->recordtype;
+			tl_sta->extra_size = 0;
+			tl_sta->next_pos   = (uint8_t *)(tl_sta + 1) - tlbuffer->msg;
+		/* */
+			reset_station_cluster( _tsta );
 		/* Next triggered station storage pointer */
-			tsta++;
-		}
-		else if ( posepic == NULL ) {
-			posepic = current;
+			tl_sta++;
+		/* */
+			if ( ++ntsta >= max_tl_sta )
+				return max_tl_sta;
 		}
 	}
 
-/* Check if the first time trigger */
-	if ( trig_flag == PEAK2TRIG_FIRST_TRIG ) {
-	/* Possible origin time */
-		tlh->origintime = posepic->peaktime;
-	/* Possible epicenter */
-		tlh->latitude   = posepic->staptr->latitude;
-		tlh->longitude  = posepic->staptr->longitude;
-		tlh->depth      = 0.0;
-	}
-/* */
-	tlh->trigstations = trigstations;
-
-	return TRIGLIST_SIZE_GET( tlh );
+	return ntsta;
 }
+
 
 /*
  * peak2trig_tlist_destroy() - Search the key in the linked list, when there
@@ -363,13 +348,13 @@ int peak2trig_tlist_pack( void *msg, size_t maxsize, const uint8_t trig_flag )
  * Returns:
  *   None.
  */
-void peak2trig_tlist_destroy( void )
+void pk2trig_tlist_destroy( void )
 {
 /* */
-	dl_list_destroy( &TList.entry, free );
+	dl_list_destroy( &PeakPool.entry, free );
 /* */
-	TList.entry = TList.tail = NULL;
-	TList.count = 0;
+	PeakPool.entry = PeakPool.tail = NULL;
+	PeakPool.count = 0;
 
 	return;
 }
@@ -377,13 +362,22 @@ void peak2trig_tlist_destroy( void )
 /*
  *
  */
-static void reset_cluster( const void *node )
+static int is_station_clustered( const TRIG_STA *tsta )
 {
-	int       i;
-	TRIG_STA *stanode = (TRIG_STA *)node;
+	for ( int i = 0; i < CLUSTER_NUM; i++ )
+		if ( tsta->cluster[i] == NULL )
+			return 0;
 
-	for ( i = 0; i < CLUSTER_NUM; i++ )
-		stanode->cluster[i] = NULL;
+	return 1;
+}
+
+/*
+ *
+ */
+static void reset_station_cluster( TRIG_STA *tsta )
+{
+	for ( int i = 0; i < CLUSTER_NUM; i++ )
+		tsta->cluster[i] = NULL;
 
 	return;
 }

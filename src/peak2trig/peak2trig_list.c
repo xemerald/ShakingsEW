@@ -12,6 +12,7 @@
 #include <trace_buf.h>
 /* Local header include */
 #include <dblist.h>
+#include <dbinfo.h>
 #include <dl_chain_list.h>
 #include <peak2trig.h>
 #include <peak2trig_misc.h>
@@ -72,9 +73,9 @@ int peak2trig_list_db_fetch( const char *table_sta, const DBINFO *dbinfo, const 
 int peak2trig_list_sta_line_parse( const char *line, const int update )
 {
 	int     result = 0;
-	char    sta[TRACE2_STA_LEN]   = { 0 };
-	char    net[TRACE2_NET_LEN]   = { 0 };
-	char    loc[TRACE2_LOC_LEN]   = { 0 };
+	char    sta[TRACE2_STA_LEN] = { 0 };
+	char    net[TRACE2_NET_LEN] = { 0 };
+	char    loc[TRACE2_LOC_LEN] = { 0 };
 	double  lat = 0.0;
 	double  lon = 0.0;
 	double  elv = 0.0;
@@ -125,7 +126,7 @@ _STAINFO *peak2trig_list_find( const TRACE_PEAKVALUE *tpv )
 	memcpy(key.net, tpv->net, TRACE2_NET_LEN);
 	memcpy(key.loc, tpv->loc, TRACE2_LOC_LEN);
 /* Find which station */
-	if ( (result = tfind(&key, &SList->root, peak2trig_misc_snl_compare)) != NULL ) {
+	if ( (result = tfind(&key, &SList->root, pk2trig_misc_snl_compare)) != NULL ) {
 	/* Found in the main Palert table */
 		result = *(_STAINFO **)result;
 	}
@@ -334,20 +335,20 @@ static _STAINFO *append_stainfo_list( StaList *list, _STAINFO *stainfo, const in
 
 /* */
 	if ( list && stainfo ) {
-		if ( (result = tfind(stainfo, _root, peak2trig_misc_snl_compare)) == NULL ) {
+		if ( (result = tfind(stainfo, _root, pk2trig_misc_snl_compare)) == NULL ) {
 		/* Insert the station information into binary tree */
 			if ( dl_node_append( (DL_NODE **)&list->entry, stainfo ) == NULL ) {
 				logit("e", "peak2trig: Error insert channel into linked list!\n");
 				goto except;
 			}
-			if ( (result = tsearch(stainfo, &list->root_t, peak2trig_misc_snl_compare)) == NULL ) {
+			if ( (result = tsearch(stainfo, &list->root_t, pk2trig_misc_snl_compare)) == NULL ) {
 				logit("e", "peak2trig: Error insert channel into binary tree!\n");
 				goto except;
 			}
 		}
 		else if ( update == PEAK2TRIG_LIST_UPDATING ) {
 			update_stainfo( *(_STAINFO **)result, stainfo );
-			if ( (result = tsearch(stainfo, &list->root_t, peak2trig_misc_snl_compare)) == NULL ) {
+			if ( (result = tsearch(stainfo, &list->root_t, pk2trig_misc_snl_compare)) == NULL ) {
 				logit("e", "peak2trig: Error insert channel into binary tree!\n");
 				goto except;
 			}

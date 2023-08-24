@@ -6,6 +6,7 @@
 #include <stdint.h>
 /* Local header include */
 #include <trace_buf.h>
+#include <triglist.h>
 #include <tracepeak.h>
 #include <peak2trig.h>
 /* */
@@ -24,14 +25,14 @@ typedef struct trig_sta {
 } TRIG_STA;
 
 /* Function prototype */
-TRIG_STA *peak2trig_tlist_insert( const _STAINFO * );
-TRIG_STA *peak2trig_tlist_find( const _STAINFO * );
-TRIG_STA *peak2trig_tlist_delete( const _STAINFO * );
-TRIG_STA *peak2trig_tlist_update( const TRACE_PEAKVALUE *, TRIG_STA * );
+TRIG_STA *pk2trig_tlist_search( const TRACE_PEAKVALUE * );
+TRIG_STA *pk2trig_tlist_find( const TRACE_PEAKVALUE * );
+TRIG_STA *pk2trig_tlist_delete( const TRACE_PEAKVALUE * );
+TRIG_STA *pk2trig_tlist_update( TRIG_STA * , const TRACE_PEAKVALUE * );
 
-int  peak2trig_tlist_len_get( void );
-int  peak2trig_tlist_cluster( const double, const double );
-int  peak2trig_tlist_pack( void *, size_t, const uint8_t );
-void peak2trig_tlist_walk( void (*)(const void *) );
-void peak2trig_tlist_time_filter( const double );
-void peak2trig_tlist_destroy( void );
+int  pk2trig_tlist_len_get( void );
+int  pk2trig_tlist_cluster( const double, const double );
+int  pk2trig_tlist_pack( TrigListPacket *, const int );
+void pk2trig_tlist_walk( void (*)( TRIG_STA * ) );
+void pk2trig_tlist_time_filter( const double );
+void pk2trig_tlist_destroy( void );
