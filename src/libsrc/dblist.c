@@ -17,6 +17,7 @@
 #include <mysql.h>
 /* Local header include */
 #include <dbinfo.h>
+#define _USE_SQL
 #include <dblist.h>
 
 /* Internal functions' prototype */

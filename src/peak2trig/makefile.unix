@@ -1,8 +1,8 @@
 #
 #
 #
-CFLAGS = $(GLOBALFLAGS) -O3 -g -I/usr/include/mysql -I../../include -I./include -flto -D_USE_SQL
-LIBS = -lm -lpthread -lmysqlclient -lrt $(MT_FLAG)
+CFLAGS = $(GLOBALFLAGS) -O3 -g -I../../include -I./include
+LIBS = -lm -lpthread -lrt $(MT_FLAG)
 
 EW_BINDIR = $(EW_HOME)/$(EW_VERSION)/bin
 EW_LIBDIR = $(EW_HOME)/$(EW_VERSION)/lib
@@ -32,16 +32,26 @@ peak2trig: $(OBJS)
 	@echo Creating $@...
 	@$(CC) $(CFLAGS) -o $(EW_BINDIR)/$@ $(OBJS) $(EWLIBS) $(LCLIBS) $(LIBS)
 
+# Optional MySQL rule
+#
+%_sql: CFLAGS+=-I/usr/include/mysql
+%_sql: CFLAGS+=-D_USE_SQL
+%_sql: LIBS+=-lmysqlclient
+
 #
 # Compile rule for Earthworm version under 7.09
 #
 ver_709: peak2trig
+
+ver_709_sql: ver_709
 
 #
 # Compile rule for Earthworm version over 7.10
 #
 ver_710: CFLAGS+=-D_V710
 ver_710: peak2trig
+
+ver_710_sql: ver_710
 
 #
 #

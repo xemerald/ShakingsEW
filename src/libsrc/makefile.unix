@@ -6,34 +6,36 @@
 #
 LOCAL_UTILS = \
 	datestring.o \
-	dblist.o \
+	dl_chain_list.o \
 	geogfunc.o \
 	iirfilter.o \
 	recordtype.o \
 	scnlfilter.o \
 	shakeint.o
 
-CFLAGS  = $(GLOBALFLAGS) -I/usr/include/mysql -I../../include
+CFLAGS = $(GLOBALFLAGS) -I../../include
 
 LIB_DIR = ../../lib
 
 # All library command
-all: libshakings.a libdl_chain_list.a pgplot
+all: libshakings pgplot
+
+#
+# General library
+#
+libshakings: $(LOCAL_UTILS)
+	@echo Creating $@...
+	@ar -rcs $@.a $(LOCAL_UTILS)
 	@mv *.a $(LIB_DIR)
 
 #
+# Database using library
 #
-#
-libshakings.a: $(LOCAL_UTILS)
+libdblist: CFLAGS+=-I/usr/include/mysql
+libdblist: dblist.o
 	@echo Creating $@...
-	@ar -rcs $@ $(LOCAL_UTILS)
-
-#
-# Double-linked list library
-#
-libdl_chain_list.a: dl_chain_list.o
-	@echo Creating $@...
-	@ar -rcs $@ dl_chain_list.o
+	@ar -rcs $@.a dblist.o
+	@mv *.a $(LIB_DIR)
 
 #
 # PGPlot library
@@ -44,7 +46,7 @@ ifdef PGPLOT_DIR
 	@echo PGPLOT_DIR is setted at $(PGPLOT_DIR)
 	-@cd ./pgplot && \
 		echo Making pgplot library... ; \
-		mkdir build ; cd build ; \
+		mkdir -p build ; cd build ; \
 		cp ../drivers.list . ; \
 		../makemake .. linux gfortran_gcc ; \
 		$(MAKE) ; \
@@ -70,6 +72,7 @@ endif
 clean:
 	@echo Cleaning build objects...
 	@rm -f a.out core *.o *.obj *% *~
+	@cd ./pgplot && rm -rf build\
 
 clean_lib:
 	@echo Removing libraries...

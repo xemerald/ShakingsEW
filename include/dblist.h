@@ -12,6 +12,7 @@
  */
 #pragma once
 /* */
+#if defined( _USE_SQL )
 #include <mysql.h>
 /* */
 #include <dbinfo.h>
@@ -77,3 +78,4 @@ void           dblist_free_result_sql( MYSQL_RES * );
 MYSQL         *dblist_start_persistent_sql( const DBINFO * );
 void           dblist_close_persistent_sql( void );
 void           dblist_end_thread_sql( void );
+#endif
