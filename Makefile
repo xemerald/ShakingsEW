@@ -23,7 +23,7 @@ usage: PHONY
 
 unix: unix_libs unix_modules
 
-unix_sql: unix_libs_sql unix_modules_sql
+unix_sql: unix_libs unix_libs_sql unix_modules_sql
 
 ###############################
 # Unix/Linux/Mac OS X targets #
