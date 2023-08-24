@@ -11,6 +11,7 @@
 #include <earthworm.h>
 /* Local header include */
 #include <dblist.h>
+#include <dbinfo.h>
 #include <dl_chain_list.h>
 #include <recordtype.h>
 #include <cf2trace.h>
