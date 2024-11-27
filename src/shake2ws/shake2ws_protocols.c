@@ -197,7 +197,7 @@ int sk2ws_protocols_station_shake(
 					logit("e", "shake2ws: Client:%s websocket write error!\n", pss->ip);
 					return -1;
 				}
-			    pss->lasttime = timenow;
+				pss->lasttime = timenow;
 			}
 		}
 		break;

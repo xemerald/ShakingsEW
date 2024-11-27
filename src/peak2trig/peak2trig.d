@@ -36,7 +36,7 @@ ClusterTimeGap        5.0            #
 #
 SQLHost         127.0.0.1         # The maximum length is 36 words
 SQLPort         3306              # Port number between 1 to 65536
-SQLDatabase     EEW	              # The maximum length is 36 words
+SQLDatabase     EEW               # The maximum length is 36 words
 
 # Login information example
 #

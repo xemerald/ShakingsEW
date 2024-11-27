@@ -22,4 +22,3 @@ int  sk2rd_msgqueue_init( const unsigned long, const unsigned long );  /* Initia
 void sk2rd_msgqueue_end( void );                                  /* End process of message queue */
 int  sk2rd_msgqueue_dequeue( void *, size_t *, MSG_LOGO * );    /* Pop-out received message from main queue */
 int  sk2rd_msgqueue_enqueue( void *, size_t, MSG_LOGO );        /* Put the compelete packet into the main queue. */
-int  sk2rd_msgqueue_rawpacket( void *, size_t, int, MSG_LOGO );
