@@ -26,6 +26,7 @@ typedef struct {
 /* Peak value */
 	double  ptime[MAX_TYPE_PEAKVALUE];     /* Time of peak sample in epoch seconds  */
 	double  pvalue[MAX_TYPE_PEAKVALUE];    /* Realtime peak value of each station   */
+	uint8_t plevel[MAX_TYPE_PEAKVALUE];    /* Realtime intensity level along with peak value */
 	uint8_t intensity[MAX_TYPE_INTENSITY]; /* Different intensities of each station */
 } STATION_PEAK;
 

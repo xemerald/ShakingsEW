@@ -87,7 +87,7 @@ static struct {
 	uint16_t rectype;
 	uint8_t  nrelated;
 	uint8_t  related_int[MAX_TYPE_INTENSITY];
-	char     prefix[MAX_PREFIX_LENGTH];
+	uint8_t  inttype;
 } SetPeakValue[MAX_TYPE_PEAKVALUE];
 /* */
 static struct {
@@ -96,7 +96,7 @@ static struct {
 	uint8_t  pvindex[MAX_TYPE_PEAKVALUE];
 } GenIntensity[MAX_TYPE_INTENSITY];
 /* List of supported protocols and callbacks */
-static struct lws_protocols protocols[] = {
+static struct lws_protocols Protocols[] = {
 	SHAKE2WS_LWS_PROTOCOL_HTTP_DUMMY,
 	SHAKE2WS_LWS_PROTOCOL_MAP_SHAKE,
 	SHAKE2WS_LWS_PROTOCOL_STATION_SHAKE,
@@ -104,8 +104,12 @@ static struct lws_protocols protocols[] = {
 	{ NULL, NULL, 0, 0, 0, NULL, 0 } /* terminator */
 };
 
-/*
+/**
+ * @brief
  *
+ * @param argc
+ * @param argv
+ * @return int
  */
 int main ( int argc, char **argv )
 {
@@ -190,7 +194,6 @@ int main ( int argc, char **argv )
 			}
 			LWSServiceStatus = THREAD_ALIVE;
 		}
-
 	/* Process all new messages */
 		do {
 		/* See if a termination has been requested */
@@ -305,7 +308,7 @@ int main ( int argc, char **argv )
 			}
 		} while( 1 );  /* end of message-processing-loop */
 	/* No more messages; wait for new ones to arrive */
-		sleep_ew(45);
+		sleep_ew(10);
 	}
 /*-----------------------------end of main loop-------------------------------*/
 exit_procedure:
@@ -449,8 +452,15 @@ static void shake2ws_config( char *configfile )
 						);
 					}
 					if ( (str = k_str()) ) {
-						strcpy(SetPeakValue[i].prefix, str);
-						logit("o", "and the setting prefix is %s\n", SetPeakValue[i].prefix);
+						SetPeakValue[i].inttype = shakestr2num( str );
+						if ( SetPeakValue[i].inttype == SHAKE_TYPE_COUNT ) {
+							logit("e", "shake2ws: Unknown type of intensity, exiting!\n");
+							exit(-1);
+						}
+						logit(
+							"o", "shake2ws: No.%d Peak value intensity type set to %s:%d!\n",
+							i, str, SetPeakValue[i].inttype
+						);
 					}
 				/* */
 					SetPeakValue[i].nrelated = 0;
@@ -639,11 +649,9 @@ static void shake2ws_end( void )
 static thr_ret shake2ws_thread_lwsservice( void *dummy )
 {
 	int    ret = 0;
-	time_t timenow;
-	time_t timelastwritable;
 /* Related definition for Websocket server */
-	struct lws_context              *ctx;
 	struct lws_context_creation_info lwsinfo;
+	struct lws_context              *ctx = NULL;
 
 /* Tell the main thread we're ok */
 	LWSServiceStatus = THREAD_ALIVE;
@@ -651,7 +659,7 @@ static thr_ret shake2ws_thread_lwsservice( void *dummy )
 /* Initialization for websocket server */
 	memset(&lwsinfo, 0, sizeof(lwsinfo));
 	lwsinfo.port                     = WSPort;
-	lwsinfo.protocols                = protocols;
+	lwsinfo.protocols                = Protocols;
 	lwsinfo.ssl_cert_filepath        = NULL;
 	lwsinfo.ssl_private_key_filepath = NULL;
 	lwsinfo.extensions               = NULL;
@@ -661,25 +669,14 @@ static thr_ret shake2ws_thread_lwsservice( void *dummy )
 	lwsinfo.options                  = LWS_SERVER_OPTION_VALIDATE_UTF8;
 	lws_set_log_level(0, NULL);
 /* */
-	ctx = lws_create_context(&lwsinfo);
-	if ( ctx == NULL ) {
+	if ( !(ctx = lws_create_context(&lwsinfo)) ) {
 		logit("e","shake2ws: Cannot initialize the websocket server, exiting!\n");
 		exit(-1);
 	}
-	timelastwritable = time(&timenow) + 1;
 
-/* Main loop */
-	while ( ret >= 0 && Finish ) {
-	/* The lws library is SINGLE thread!! */
-		if ( (time(&timenow) - timelastwritable) >= 1 ) {
-			timelastwritable = timenow;
-			lws_callback_on_writable_all_protocol(ctx, &protocols[PROTOCOL_MAP_SHAKE]);
-			lws_callback_on_writable_all_protocol(ctx, &protocols[PROTOCOL_STATION_SHAKE]);
-			lws_callback_on_writable_all_protocol(ctx, &protocols[PROTOCOL_STATION_STATUS]);
-		}
-	/* Main websocket service */
+/* Main loop, The lws library is SINGLE thread!! */
+	while ( ret >= 0 && Finish )
 		ret = lws_service(ctx, 0);
-	}
 
 /* we're quitting */
 	lws_context_destroy(ctx);
@@ -718,7 +715,6 @@ static int is_single_pvalue_sync( const STATION_PEAK *stapeak, const int pvalue_
  */
 static int is_needed_pvalues_sync( const STATION_PEAK *stapeak, const int intensity_i )
 {
-	int    i;
 	time_t ptime;
 
 /* */
@@ -727,7 +723,7 @@ static int is_needed_pvalues_sync( const STATION_PEAK *stapeak, const int intens
 	if ( labs(time(NULL) - ptime) > LATENCY_THRESHOLD )
 		return 0;
 /* */
-	for ( i = 1; i < GenIntensity[intensity_i].npvalue; i++ ) {
+	for ( int i = 1; i < GenIntensity[intensity_i].npvalue; i++ ) {
 		if ( labs((time_t)stapeak->ptime[GenIntensity[intensity_i].pvindex[i]] - ptime) > 2 )
 			return 0;
 	}
@@ -742,8 +738,8 @@ static double update_single_pvalue( STATION_PEAK *stapeak, const int pvalue_i )
 {
 	DL_NODE   *node    = NULL;
 	CHAN_PEAK *chapeak = NULL;
-	double     pvalue = NULL_PEAKVALUE;
-	double     ptime  = NULL_PEAKVALUE;
+	double     pvalue  = NULL_PEAKVALUE;
+	double     ptime   = 0.0;
 
 /* */
 	DL_LIST_FOR_EACH_DATA( (DL_NODE *)stapeak->chlist[pvalue_i], node, chapeak ) {
@@ -755,6 +751,8 @@ static double update_single_pvalue( STATION_PEAK *stapeak, const int pvalue_i )
 /* */
 	stapeak->pvalue[pvalue_i] = pvalue;
 	stapeak->ptime[pvalue_i]  = ptime;
+	stapeak->plevel[pvalue_i] =
+		pvalue > 0.0 ? shake_get_intensity( &pvalue, 1, SetPeakValue[pvalue_i].inttype ) + 1 : 0;
 
 	return pvalue;
 }
@@ -764,18 +762,17 @@ static double update_single_pvalue( STATION_PEAK *stapeak, const int pvalue_i )
  */
 static void update_related_intensities( STATION_PEAK *stapeak, const int pvalue_i )
 {
-	int    i, j;
 	int    intensity_i;
 	int    npvalue;
 	double pvalues[MAX_TYPE_PEAKVALUE];
 
 /* */
-	for ( i = 0; i < SetPeakValue[pvalue_i].nrelated; i++ ) {
+	for ( int i = 0; i < SetPeakValue[pvalue_i].nrelated; i++ ) {
 	/* */
 		intensity_i = SetPeakValue[pvalue_i].related_int[i];
 		if ( is_needed_pvalues_sync( stapeak, intensity_i ) ) {
 			npvalue = GenIntensity[intensity_i].npvalue;
-			for ( j = 0; j < npvalue; j++ )
+			for ( int j = 0; j < npvalue; j++ )
 				pvalues[j] = stapeak->pvalue[GenIntensity[intensity_i].pvindex[j]];
 			/* */
 			stapeak->intensity[intensity_i] =
@@ -794,17 +791,17 @@ static void update_related_intensities( STATION_PEAK *stapeak, const int pvalue_
  */
 static void check_station_latency( void *nodep, const int seq, void *arg )
 {
-	int           i;
 	STATION_PEAK *stapeak = (STATION_PEAK *)nodep;
 	CHAN_PEAK    *chapeak = NULL;
 	DL_NODE      *node    = NULL;
 	DL_NODE      *safe    = NULL;
 	time_t        timenow = *(time_t *)arg;
 
-	for ( i = 0; i < nPeakValue; i++ ) {
+	for ( int i = 0; i < nPeakValue; i++ ) {
 		if ( (timenow - (time_t)stapeak->ptime[i]) > LATENCY_THRESHOLD ) {
 			stapeak->pvalue[i] = NULL_PEAKVALUE;
 			stapeak->ptime[i]  = NULL_PEAKVALUE;
+			stapeak->plevel[i] = 0;
 			update_related_intensities( stapeak, i );
 		/* We should also drop the channels that have already stopped for over LATENCY_THRESHOLD */
 			DL_LIST_FOR_EACH_DATA_SAFE( (DL_NODE *)stapeak->chlist[i], node, chapeak, safe ) {
@@ -841,7 +838,6 @@ static void *proc_com_sv_index( const char *command )
  */
 static int proc_com_input_pv( int inputpv, const int gen_index )
 {
-	int i;
 	int pvcount = 0;
 
 /* Processing of input message list */
@@ -851,7 +847,7 @@ static int proc_com_input_pv( int inputpv, const int gen_index )
 	}
 /* */
 	memset(GenIntensity[gen_index].pvindex, 0, sizeof(uint8_t) * MAX_TYPE_PEAKVALUE);
-	for ( i = 0; i < MAX_TYPE_PEAKVALUE; i++, inputpv >>= 1 ) {
+	for ( int i = 0; i < MAX_TYPE_PEAKVALUE; i++, inputpv >>= 1 ) {
 		if ( inputpv & 0x01 ) {
 			GenIntensity[gen_index].pvindex[pvcount++] = i;
 			SetPeakValue[i].related_int[SetPeakValue[i].nrelated] = gen_index;

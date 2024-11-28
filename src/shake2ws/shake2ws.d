@@ -25,12 +25,12 @@ GetEventsFrom  INST_WILDCARD      MOD_WILDCARD    TYPE_TRACEPEAK
 # the prefix you setted here. And max length of prefix is 16 (include NULL termination).
 #
 # List the peak value type you want to set in the redis server.
-#                  Index#    Value Types    Table Key Prefix
-SetPeakValueType     0          acc               PGA
-SetPeakValueType     1          vel               PGV
-SetPeakValueType     2          dis               PGD
-SetPeakValueType     3          sa                SAL
-SetPeakValueType     4          sa                SAS
+#                  Index#    Value Types    Intensity Types
+SetPeakValueType     0          acc             CWBPGA
+SetPeakValueType     1          vel             CWBPGV
+SetPeakValueType     2          dis             PACD
+SetPeakValueType     3          sa              CWBPGA
+SetPeakValueType     4          sa              CWBPGA
 
 # List of generating intensity index (Under construction):
 #

@@ -311,7 +311,7 @@ STATION_PEAK *sk2ws_list_station_map( const char *sta, const char *net, const ch
 {
 	STATION_PEAK       *result   = NULL;
 	static STATION_PEAK null_sta = {
-		{ 0 }, { 0 }, { 0 }, NULL, { NULL }, { 0.0 }, NULL_PEAKVALUE_ARRAY, { 0 }
+		{ 0 }, { 0 }, { 0 }, NULL, { NULL }, { 0.0 }, NULL_PEAKVALUE_ARRAY, { 0 }, { 0 }
 	};
 
 /* */
