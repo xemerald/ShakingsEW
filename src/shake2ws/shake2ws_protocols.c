@@ -444,7 +444,7 @@ int sk2ws_protocols_station_status(
 				}
 			/* Go thru all stations and set the status to online */
 				status_ptr = pss->status;
-				for ( int i = 0; i < pss->totalsta; i++ )
+				for ( int i = 0; i < pss->totalsta; i++, *status_ptr++ )
 					*status_ptr = true;
 			}
 			else {
