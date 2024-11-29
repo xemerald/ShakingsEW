@@ -17,7 +17,6 @@ WSPort             9999           #
 #              Installation       Module          Message Types
 GetEventsFrom  INST_WILDCARD      MOD_WILDCARD    TYPE_TRACEPEAK
 
-
 # The type of the peak value which will be setted:
 #
 # Something about "Table Key Prefix":
@@ -28,7 +27,7 @@ GetEventsFrom  INST_WILDCARD      MOD_WILDCARD    TYPE_TRACEPEAK
 #                  Index#    Value Types    Intensity Types
 SetPeakValueType     0          acc             CWBPGA
 SetPeakValueType     1          vel             CWBPGV
-SetPeakValueType     2          dis             PACD
+SetPeakValueType     2          dis              PACD
 SetPeakValueType     3          sa              CWBPGA
 SetPeakValueType     4          sa              CWBPGA
 

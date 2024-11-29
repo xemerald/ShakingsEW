@@ -25,7 +25,7 @@ struct per_session_data {
 	uint16_t peak_i;
 	time_t   listtime;
 	void    *stapeak;
-	_Bool   *status;
+	void    *status;
 /* */
 	size_t   msg_size;
 	uint8_t *savemsg;

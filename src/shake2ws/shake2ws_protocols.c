@@ -11,6 +11,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <time.h>
 #include <netinet/in.h>
 #include <libwebsockets.h>
@@ -32,7 +33,7 @@ typedef struct {
 		uint8_t intensity;
 	} peakvalue;
 	uint32_t alive_sec;
-} ShakeAlive;
+} SHAKE_ALIVE;
 
 /**
  * @
@@ -71,7 +72,7 @@ int sk2ws_protocols_map_shake(
 	STATION_PEAK   *_stapeak = NULL;
 /* */
 	struct per_session_data *pss = (struct per_session_data *)user;
-	ShakeAlive *salive_ptr = NULL;
+	SHAKE_ALIVE             *salive_ptr = NULL;
 
 /* Get the time of present */
 	time(&timenow);
@@ -108,7 +109,7 @@ int sk2ws_protocols_map_shake(
 			payload_ptr            = payload + LWS_PRE;
 			*(double *)payload_ptr = (double)timenow;
 			payload_ptr           += sizeof(double);
-			salive_ptr             = (ShakeAlive *)pss->status;
+			salive_ptr             = (SHAKE_ALIVE *)pss->status;
 		/* */
 			for ( int i = 0; i < pss->totalsta; i++, salive_ptr++ ) {
 				_stapeak = ((STATION_PEAK **)pss->stapeak)[i];
@@ -149,7 +150,7 @@ int sk2ws_protocols_map_shake(
 		/* The tag format will be "<peak_type>:<time_window>", and we use the seq to save the time window value here */
 			sscanf(tagbuf, "%hd:%d", &pss->peak_i, &pss->seq);
 			pss->listtime = sk2ws_list_timestamp_get();
-			pss->status   = calloc(pss->totalsta, sizeof(ShakeAlive));
+			pss->status   = calloc(pss->totalsta, sizeof(SHAKE_ALIVE));
 		/* */
 			if ( pss->totalsta && pss->peak_i < nIntensity ) {
 				if ( !payload || payload_size < (size_t)(LWS_PRE + sizeof(double) + pss->totalsta) ) {
@@ -211,7 +212,6 @@ int sk2ws_protocols_station_shake(
 	static double  *timestamp_ptr = NULL;
 	static double  *pvalue_ptr    = NULL;
 	static uint8_t *plevel_ptr    = NULL;
-	static size_t   data_size    = 0;
 /* */
 	time_t          timenow;
 
@@ -221,16 +221,6 @@ int sk2ws_protocols_station_shake(
 	time(&timenow);
 /* Start to define the callback condition */
 	switch ( reason ) {
-	case LWS_CALLBACK_PROTOCOL_INIT:
-		if ( !payload ) {
-			payload_size  = LWS_PRE + sizeof(double) * (nPeakValue + 1) + sizeof(uint8_t) * nPeakValue;
-			payload       = (uint8_t *)malloc(payload_size);
-			timestamp_ptr = (double *)(payload + LWS_PRE);
-			pvalue_ptr    = timestamp_ptr + 1;
-			plevel_ptr    = (uint8_t *)(pvalue_ptr + nPeakValue);
-			data_size     = sizeof(double) * (nPeakValue + 1) + sizeof(uint8_t) * nPeakValue;
-		}
-		break;
 	case LWS_CALLBACK_PROTOCOL_DESTROY:
 		if ( payload && payload_size ) {
 			free(payload);
@@ -243,13 +233,16 @@ int sk2ws_protocols_station_shake(
 		break;
 	case LWS_CALLBACK_ESTABLISHED:
 		init_per_session_data( pss );
-		pss->savemsg  = (uint8_t *)malloc(TRACE2_STA_LEN);
-		pss->msg_size = TRACE2_STA_LEN;
+		pss->savemsg = (uint8_t *)malloc(TRACE2_STA_LEN + 1);
 		lws_get_peer_simple(wsi, pss->ip, INET6_ADDRSTRLEN);
 		logit("ot", "shake2ws: Client:%s is connected, protocol is STATION_SHAKE.\n", pss->ip);
 		break;
 	case LWS_CALLBACK_TIMER:
-		if ( pss->totalsta ) {
+		if ( pss->peak_i ) {
+		/* */
+			timestamp_ptr = (double *)(payload + LWS_PRE);
+			pvalue_ptr    = timestamp_ptr + 1;
+			plevel_ptr    = (uint8_t *)(pvalue_ptr + pss->peak_i);
 		/* */
 			if ( sk2ws_list_timestamp_get() > pss->listtime ) {
 			/* Re-map the station link */
@@ -258,12 +251,12 @@ int sk2ws_protocols_station_shake(
 			}
 		/* */
 			*timestamp_ptr = (double)timenow;
-			for ( int i = 0; i < nPeakValue; i++ ) {
+			for ( int i = 0; i < nPeakValue && i < pss->peak_i; i++ ) {
 				pvalue_ptr[i] = ((STATION_PEAK *)pss->stapeak)->pvalue[i];
 				plevel_ptr[i] = ((STATION_PEAK *)pss->stapeak)->plevel[i];
 			}
 		/* */
-			if ( lws_write(wsi, payload + LWS_PRE, data_size, LWS_WRITE_BINARY) < (int)data_size ) {
+			if ( lws_write(wsi, payload + LWS_PRE, pss->msg_size, LWS_WRITE_BINARY) < (int)pss->msg_size ) {
 				logit("e", "shake2ws: Client:%s websocket write error!\n", pss->ip);
 				return -1;
 			}
@@ -276,17 +269,40 @@ int sk2ws_protocols_station_shake(
 		if ( len < 1 )
 			break;
 	/* */
-		memcpy(pss->savemsg, in, len);
-		((char *)pss->savemsg)[len] = '\0';
+		((char *)in)[len] = '\0';
+		sscanf((char *)in, "%7[^:]:%hd:%d", (char *)pss->savemsg, &pss->peak_i, &pss->seq);
 		pss->stapeak  = sk2ws_list_station_map( (char *)pss->savemsg, "TW", "--" );
+		pss->msg_size = sizeof(double) + (sizeof(double) + sizeof(uint8_t)) * pss->peak_i;
+	/* */
+		if ( pss->stapeak && pss->peak_i <= MAX_TYPE_PEAKVALUE ) {
+			if ( !payload || payload_size < (size_t)(LWS_PRE + pss->msg_size) ) {
+				if ( payload ) {
+					free(payload);
+					payload = NULL;
+				}
+				payload_size = LWS_PRE + pss->msg_size;
+				payload      = (uint8_t *)malloc(payload_size);
+			}
+			if ( !payload ) {
+				logit("t", "shake2ws: Can't allocate memory for Client:%s in STATION_SHAKE.\n", pss->ip);
+				lws_close_reason(wsi, LWS_CLOSE_STATUS_UNEXPECTED_CONDITION, NULL, 0);
+				return -1;
+			}
+		}
+		else {
+			logit("t", "shake2ws: Some errors when parsing message (%s) from Client:%s in STATION_SHAKE.\n", (char *)in, pss->ip);
+			lws_close_reason(wsi, LWS_CLOSE_STATUS_UNEXPECTED_CONDITION, NULL, 0);
+			return -1;
+		}
+	/* */
 		pss->listtime = sk2ws_list_timestamp_get();
-		pss->peak_i   = nPeakValue;
 		pss->totalsta = 1;
 		pss->lasttime = timenow;
 	/* */
 		logit(
-			"ot", "shake2ws: Client:%s request the peak value of %s.\n",
-			pss->ip, ((STATION_PEAK *)pss->stapeak)->sta
+			"ot", "shake2ws: Client:%s request total %d peak value(s) of %s.\n",
+			pss->ip, pss->peak_i,
+			strlen(((STATION_PEAK *)pss->stapeak)->sta) ? ((STATION_PEAK *)pss->stapeak)->sta : "station not in list yet"
 		);
 	/* */
 		lws_set_timer_usecs(wsi, LWS_USEC_PER_SEC);
@@ -322,7 +338,8 @@ int sk2ws_protocols_station_status(
 	size_t          data_size;
 	uint32_t       *payload_ptr = NULL;
 	STATION_PEAK   *_stapeak = NULL;
-	_Bool           _status;
+	bool            _status;
+	bool           *status_ptr = NULL;
 /* */
 	struct per_session_data *pss = (struct per_session_data *)user;
 
@@ -364,14 +381,15 @@ int sk2ws_protocols_station_status(
 				pss->listtime = sk2ws_list_timestamp_get();
 			}
 		/* Go thru all stations */
-			for ( int i = 0; i < pss->totalsta; i++ ) {
+			status_ptr = pss->status;
+			for ( int i = 0; i < pss->totalsta; i++, status_ptr++ ) {
 				_stapeak = ((STATION_PEAK **)pss->stapeak)[i];
-				_status  = _stapeak->pvalue[0] < 0.0 ? 0 : 1;
+				_status  = _stapeak->pvalue[0] < 0.0 ? false : true;
 			/* We just notify those stations with different status than the last time, include the first time (all online) */
-				if ( pss->status[i] != _status ) {
+				if ( *status_ptr != _status ) {
 					*payload_ptr++ = i;
-				/* And save the status of every station... */
-					pss->status[i] = _status;
+				/* And save the new status... */
+					*status_ptr = _status;
 				}
 			}
 		/* Calculate the payload size and send it */
@@ -419,14 +437,15 @@ int sk2ws_protocols_station_status(
 					}
 				}
 			/* */
-				if ( !(pss->status = calloc(pss->totalsta, sizeof(uint8_t))) ) {
+				if ( !(pss->status = calloc(pss->totalsta, sizeof(bool))) ) {
 					logit("e", "shake2ws: Can't allocate memory for Client:%s in STATION_STATUS.\n", pss->ip);
 					lws_close_reason(wsi, LWS_CLOSE_STATUS_UNEXPECTED_CONDITION, NULL, 0);
 					return -1;
 				}
 			/* Go thru all stations and set the status to online */
+				status_ptr = pss->status;
 				for ( int i = 0; i < pss->totalsta; i++ )
-					pss->status[i] = 1;
+					*status_ptr = true;
 			}
 			else {
 				logit("e", "shake2ws: Can't map station list for Client:%s in STATION_STATUS.\n", pss->ip);
