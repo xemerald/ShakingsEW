@@ -238,12 +238,12 @@ int main ( int argc, char **argv )
 				tracepv.recordtype == RecordTypeToTrig &&
 				(tracepv.peakvalue = fabs(tracepv.peakvalue)) >= PeakThreshold
 			) {
-			#ifdef _DEBUG
+			#ifdef _SEW_DEBUG
 				printf("peak2trig: Got a new trace peak from %s.%s.%s.%s!\n",
 				tracepv.sta, tracepv.chan, tracepv.net, tracepv.loc);
 			#endif
 				if ( !pk2trig_tlist_search( &tracepv ) && !peak2trig_list_find( &tracepv ) ) {
-				#ifdef _DEBUG
+				#ifdef _SEW_DEBUG
 				/* Not found in trace table */
 					printf("peak2trig: %s.%s.%s.%s not found in station table, maybe it's a new station.\n",
 					tracepv.sta, tracepv.chan, tracepv.net, tracepv.loc);
