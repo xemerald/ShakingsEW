@@ -316,7 +316,7 @@ STATION_PEAK *sk2ws_list_station_map( const char *sta, const char *net, const ch
 
 /* */
 	if ( (result = sk2ws_list_find( sta, net, loc )) == NULL ) {
-	#ifdef _DEBUG
+	#ifdef _SEW_DEBUG
 		printf("shake2ws: Can't find the %s.%s.%s; assigned the null information!\n", sta, net, loc);
 	#endif
 		result = &null_sta;

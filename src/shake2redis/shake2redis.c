@@ -280,7 +280,7 @@ int main ( int argc, char **argv )
 					(chapeak = sk2rd_list_chlist_find( stapeak, buffer.tpv.chan ))) &&
 					!scnlfilter_trace_apply( buffer.msg, reclogo.type, &_match )
 				) {
-				#ifdef _DEBUG
+				#ifdef _SEW_DEBUG
 					printf("shake2redis: Found SCNL %s.%s.%s.%s but not in the filter, drop it!\n",
 					buffer.tpv.sta, buffer.tpv.chan, buffer.tpv.net, buffer.tpv.loc);
 				#endif

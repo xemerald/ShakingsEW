@@ -216,7 +216,7 @@ int main ( int argc, char **argv )
 					!(traceptr = vecsum_tlist_find( &tracebuffer.trh2x )) &&
 					!scnlfilter_trace_apply( tracebuffer.msg, reclogo.type, &_match )
 				) {
-				#ifdef _DEBUG
+				#ifdef _SEW_DEBUG
 					printf("vecsum: Found SCNL %s.%s.%s.%s but not in the filter, drop it!\n",
 					tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc);
 				#endif
@@ -260,21 +260,21 @@ int main ( int argc, char **argv )
 			/* Start processing the gap in trace */
 				if ( fabs(tmp_time = tracebuffer.trh2x.starttime - traceptr->lasttime) > traceptr->delta * 2.0 ) {
 					if ( (time_t)tracebuffer.trh2x.starttime > (time(&time_now) + 3) ) {
-					#ifdef _DEBUG
+					#ifdef _SEW_DEBUG
 						printf( "vecsum: %s.%s.%s.%s NTP sync error, drop it!\n",
 						tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc );
 					#endif
 						continue;
 					}
 					else if ( tmp_time < 0.0 ) {
-					#ifdef _DEBUG
+					#ifdef _SEW_DEBUG
 						printf( "vecsum: Overlapped in %s.%s.%s.%s, drop it!\n",
 						tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc );
 					#endif
 						continue;
 					}
 					else if ( tmp_time > 0.0 && traceptr->lasttime > 0.0 )	{
-					#ifdef _DEBUG
+					#ifdef _SEW_DEBUG
 						printf( "vecsum: Found %ld sample gap in %s.%s.%s.%s!\n",
 							(long)(tmp_time * tracebuffer.trh2x.samprate),
 							tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc );

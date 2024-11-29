@@ -282,7 +282,7 @@ int main ( int argc, char **argv )
 
 				if ( (traceptr = cf2tra_list_find( &tracebuffer_i.trh2x )) == NULL ) {
 				/* Not found in trace table */
-				#ifdef _DEBUG
+				#ifdef _SEW_DEBUG
 					printf("cf2trace: %s.%s.%s.%s not found in trace table, maybe it's a new trace.\n",
 					tracebuffer_i.trh2.sta, tracebuffer_i.trh2.chan, tracebuffer_i.trh2.net, tracebuffer_i.trh2.loc);
 				#endif
