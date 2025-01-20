@@ -1,39 +1,64 @@
+/**
+ * @file cf2trace.c
+ * @author Benjamin Ming Yang (b98204032@gmail.com) @ Department of Geology, National Taiwan University
+ * @brief
+ * @date 2018-03-20
+ *
+ * @copyright Copyright (c) 2018
+ *
+ */
 #ifdef _OS2
 #define INCL_DOSMEMMGR
 #define INCL_DOSSEMAPHORES
 #include <os2.h>
 #endif
-/* Standard C header include */
+/**
+ * @name Standard C header include
+ *
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
 #include <ctype.h>
+#include <threads.h>
 #include <time.h>
-/* Earthworm environment header include */
+/**
+ * @name Earthworm environment header include
+ *
+ */
 #include <earthworm.h>
 #include <kom.h>
 #include <transport.h>
 #include <lockfile.h>
 #include <trace_buf.h>
 #include <swap.h>
-/* Local header include */
+/**
+ * @name Local header include
+ *
+ */
 #include <dbinfo.h>
 #include <cf2trace.h>
 #include <cf2trace_list.h>
 
-/* Functions prototype in this source file */
-static void cf2trace_config( char * );
+/**
+ * @name Functions prototype in this source file
+ *
+ */
+static void cf2trace_config( const char * );
 static void cf2trace_lookup( void );
 static void cf2trace_status( unsigned char, short, char * );
 static void cf2trace_end( void );                /* Free all the local memory & close socket */
 
-static thr_ret thread_update_list( void * );
-static int update_list_configfile( char * );
+static int thread_update_list( void * );
+static int update_list_configfile( const char * );
 static int apply_cf_tracedata_single( TracePacket *, const TracePacket *, const double );
 static int apply_cf_tracedata_double( TracePacket *, const TracePacket *, const double );
 
-/* Ring messages things */
+/**
+ * @name Ring messages things
+ *
+ */
 static SHM_INFO InRegion;      /* shared memory region to use for i/o    */
 static SHM_INFO OutRegion;     /* shared memory region to use for i/o    */
 /* */
@@ -42,15 +67,12 @@ static MSG_LOGO Putlogo;           /* array for output module, type, instid     
 static MSG_LOGO Getlogo[MAXLOGO];  /* array for requesting module, type, instid */
 static pid_t    MyPid;             /* for restarts by startstop                 */
 
-/* Thread things */
-#define THREAD_STACK 8388608         /* 8388608 Byte = 8192 Kilobyte = 8 Megabyte */
-#define THREAD_OFF    0              /* Thread has not been started      */
-#define THREAD_ALIVE  1              /* Thread alive and well            */
-#define THREAD_ERR   -1              /* Thread encountered error quit    */
-
 /* */
 #define MAXLIST  5
-/* Things to read or derive from configuration file */
+/**
+ * @name Things to read or derive from configuration file
+ *
+ */
 static char     InRingName[MAX_RING_STR];   /* name of transport ring for i/o    */
 static char     OutRingName[MAX_RING_STR];  /* name of transport ring for i/o    */
 static char     MyModName[MAX_MOD_STR];     /* speak as this module name/id      */
@@ -63,7 +85,10 @@ static DBINFO   DBInfo;
 static char     SQLChannelTable[MAXLIST][MAX_TABLE_LEGTH];
 static uint16_t nList = 0;
 
-/* Things to look up in the earthworm.h tables with getutil.c functions */
+/**
+ * @name Things to look up in the earthworm.h tables with getutil.c functions
+ *
+ */
 static int64_t InRingKey;       /* key of transport ring for i/o     */
 static int64_t OutRingKey;      /* key of transport ring for i/o     */
 static uint8_t InstId;          /* local installation id             */
@@ -72,21 +97,34 @@ static uint8_t TypeHeartBeat;
 static uint8_t TypeError;
 static uint8_t TypeTracebuf2 = 0;
 
-/* Error messages used by cf2trace
- *********************************/
-#define  ERR_MISSMSG       0   /* message missed in transport ring       */
-#define  ERR_TOOBIG        1   /* retreived msg too large for buffer     */
-#define  ERR_NOTRACK       2   /* msg retreived; tracking limit exceeded */
-#define  ERR_QUEUE         3   /* error queueing message for sending      */
+/**
+ * @name Error messages used by cf2trace
+ *
+ */
+#define ERR_MISSMSG       0   /* message missed in transport ring       */
+#define ERR_TOOBIG        1   /* retreived msg too large for buffer     */
+#define ERR_NOTRACK       2   /* msg retreived; tracking limit exceeded */
+#define ERR_QUEUE         3   /* error queueing message for sending      */
 static char Text[150];         /* string for log/error messages          */
 
-/* Update flag used by cf2trace */
-#define  LIST_IS_UPDATED      0
-#define  LIST_NEED_UPDATED    1
-#define  LIST_UNDER_UPDATE    2
+/**
+ * @name Update flag used by cf2trace
+ *
+ */
+#define LIST_IS_UPDATED    0
+#define LIST_NEED_UPDATED  1
+#define LIST_UNDER_UPDATE  2
 
+/**
+ * @brief
+ *
+ */
 static volatile uint8_t UpdateStatus = LIST_IS_UPDATED;
 
+/**
+ * @brief
+ *
+ */
 #define RE_ARRANGE_TRACEDATA(_TRACE_PACKET_PTR, _DROP_NSAMP, _REST_NSAMP) \
 		memmove( \
 			&(_TRACE_PACKET_PTR)->trh2 + 1, \
@@ -94,8 +132,12 @@ static volatile uint8_t UpdateStatus = LIST_IS_UPDATED;
 			((_TRACE_PACKET_PTR)->trh2.datatype[1] - '0') * (_REST_NSAMP) \
 		)
 
-/*
+/**
+ * @brief Main entry.
  *
+ * @param argc
+ * @param argv
+ * @return int
  */
 int main ( int argc, char **argv )
 {
@@ -112,11 +154,8 @@ int main ( int argc, char **argv )
 	_TRACEINFO *traceptr;
 	TracePacket tracebuffer_i;  /* message which is received from share ring    */
 	TracePacket tracebuffer_o;  /* message which is sent to share ring    */
-#if defined( _V710 )
-	ew_thread_t tid;            /* Thread ID */
-#else
-	unsigned    tid;            /* Thread ID */
-#endif
+	thrd_t      tid_update;     /* Thread ID */
+
 	int  (*apply_cf_func)( TracePacket *, const TracePacket *, const double );
 	size_t odata_size  = 4;
 	char   odata_type1 = '4';
@@ -196,7 +235,7 @@ int main ( int argc, char **argv )
 			(time_now - time_lastupd) >= (int64_t)UpdateInterval
 		) {
 			time_lastupd = time_now;
-			if ( StartThreadWithArg(thread_update_list, argv[1], (uint32_t)THREAD_STACK, &tid) == -1 ) {
+			if ( thrd_create(&tid_update, thread_update_list, argv[1]) != thrd_success ) {
 				logit("e", "cf2trace: Error starting the thread(thread_update_list)!\n");
 				UpdateStatus = LIST_IS_UPDATED;
 			}
@@ -300,9 +339,9 @@ int main ( int argc, char **argv )
 				tracebuffer_o.trh2x.datatype[1] = odata_type1;
 				tracebuffer_o.trh2x.datatype[2] = '\0';
 			#if defined( _SPARC )
-				tracebuffer_o.trh2x.datatype[0] = 't';      /* SUN IEEE single precision real */
+				tracebuffer_o.trh2x.datatype[0] = 't';      /* SUN IEEE floating number */
 			#elif defined( _INTEL )
-				tracebuffer_o.trh2x.datatype[0] = 'f';      /* VAX/Intel IEEE single precision real */
+				tracebuffer_o.trh2x.datatype[0] = 'f';      /* VAX/Intel IEEE floating number */
 			#else
 				printf("cf2trace: WARNING! _INTEL and _SPARC are both undefined!\n");
 			#endif
@@ -338,30 +377,32 @@ exit_procedure:
 	return 0;
 }
 
-/*
- * cf2trace_config() - processes command file(s) using kom.c functions;
- *                     exits if any errors are encountered.
+/**
+ * @brief # of required commands you expect to process
+ *
  */
-static void cf2trace_config( char *configfile )
+#define CONDFIG_NUM_COMMAND  11
+
+/**
+ * @brief processes command file(s) using kom.c functions;
+ *        exits if any errors are encountered.
+ *
+ * @param configfile
+ */
+static void cf2trace_config( const char *configfile )
 {
-	char  init[11];     /* init flags, one byte for each required command */
+	char  init[CONDFIG_NUM_COMMAND];  /* init flags, one byte for each required command */
 	char *com;
 	char *str;
 
-	int ncommand;     /* # of required commands you expect to process   */
-	int nmiss;        /* number of required commands that were missed   */
+	int nmiss;                        /* number of required commands that were missed   */
 	int nfiles;
 	int success;
 	int i;
 
 /* Set to zero one init flag for each required command */
-	ncommand = 11;
-	for( i = 0; i < ncommand; i++ ) {
-		if ( i < 6 )
-			init[i] = 0;
-		else
-			init[i] = 1;
-	}
+	for( i = 0; i < CONDFIG_NUM_COMMAND; i++ )
+		init[i] = i < 6 ? 0 : 1;
 /* Open the main configuration file */
 	nfiles = k_open(configfile);
 	if ( nfiles == 0 ) {
@@ -373,27 +414,27 @@ static void cf2trace_config( char *configfile )
  * Process all command files
  * While there are command files open
  */
-   	while ( nfiles > 0 ) {
-   	/* Read next line from active file  */
-   		while ( k_rd() ) {
-   		/* Get the first token from line */
-   			com = k_str();
-   		/* Ignore blank lines & comments */
-   			if ( !com )
-   				continue;
-   			if ( com[0] == '#' )
-   				continue;
+	while ( nfiles > 0 ) {
+	/* Read next line from active file  */
+		while ( k_rd() ) {
+		/* Get the first token from line */
+			com = k_str();
+		/* Ignore blank lines & comments */
+			if ( !com )
+				continue;
+			if ( com[0] == '#' )
+				continue;
 
-   		/* Open a nested configuration file */
-   			if ( com[0] == '@' ) {
-   				success = nfiles+1;
-   				nfiles  = k_open(&com[1]);
-   				if ( nfiles != success ) {
-   					logit("e", "cf2trace: Error opening command file <%s>; exiting!\n", &com[1]);
-   					exit(-1);
-   				}
-   				continue;
-   			}
+		/* Open a nested configuration file */
+			if ( com[0] == '@' ) {
+				success = nfiles + 1;
+				nfiles  = k_open(&com[1]);
+				if ( nfiles != success ) {
+					logit("e", "cf2trace: Error opening command file <%s>; exiting!\n", &com[1]);
+					exit(-1);
+				}
+				continue;
+			}
 
 		/* Process anything else as a command */
 		/* 0 */
@@ -465,7 +506,7 @@ static void cf2trace_config( char *configfile )
 				if ( str )
 					strcpy(DBInfo.host, str);
 #if defined( _USE_SQL )
-				for ( i = 5; i < 10; i++ )
+				for ( i = 6; i < CONDFIG_NUM_COMMAND; i++ )
 					init[i] = 0;
 #endif
 			}
@@ -550,7 +591,7 @@ static void cf2trace_config( char *configfile )
 				nLogo++;
 				init[5] = 1;
 			}
-		 /* Unknown command */
+		/* Unknown command */
 			else {
 				logit("e", "cf2trace: <%s> Unknown command in <%s>.\n", com, configfile);
 				continue;
@@ -558,8 +599,8 @@ static void cf2trace_config( char *configfile )
 
 		/* See if there were any errors processing the command */
 			if ( k_err() ) {
-			   logit("e", "cf2trace: Bad <%s> command in <%s>; exiting!\n", com, configfile);
-			   exit( -1 );
+				logit("e", "cf2trace: Bad <%s> command in <%s>; exiting!\n", com, configfile);
+				exit( -1 );
 			}
 		}
 		nfiles = k_close();
@@ -567,7 +608,7 @@ static void cf2trace_config( char *configfile )
 
 /* After all files are closed, check init flags for missed commands */
 	nmiss = 0;
-	for ( i = 0; i < ncommand; i++ )
+	for ( i = 0; i < CONDFIG_NUM_COMMAND; i++ )
 		if ( !init[i] )
 			nmiss++;
 /* */
@@ -592,8 +633,9 @@ static void cf2trace_config( char *configfile )
 	return;
 }
 
-/*
- * cf2trace_lookup() - Look up important info from earthworm.h tables
+/**
+ * @brief Look up important info from earthworm.h tables
+ *
  */
 static void cf2trace_lookup( void )
 {
@@ -633,9 +675,13 @@ static void cf2trace_lookup( void )
 	return;
 }
 
-/*
- * cf2trace_status() - builds a heartbeat or error message & puts it into
- *                      shared memory.  Writes errors to log file & screen.
+/**
+ * @brief Builds a heartbeat or error message & puts it into shared memory.
+ *        Writes errors to log file & screen.
+ *
+ * @param type
+ * @param ierr
+ * @param note
  */
 static void cf2trace_status( unsigned char type, short ierr, char *note )
 {
@@ -664,18 +710,19 @@ static void cf2trace_status( unsigned char type, short ierr, char *note )
 /* Write the message to shared memory */
 	if ( tport_putmsg(&InRegion, &logo, size, msg) != PUT_OK ) {
 		if ( type == TypeHeartBeat ) {
-			logit("et", "cf2trace:  Error sending heartbeat.\n");
+			logit("et", "cf2trace: Error sending heartbeat.\n");
 		}
 		else if ( type == TypeError ) {
-			logit("et", "cf2trace:  Error sending error:%d.\n", ierr);
+			logit("et", "cf2trace: Error sending error:%d.\n", ierr);
 		}
 	}
 
 	return;
 }
 
-/*
- * cf2trace_end() - free all the local memory & close socket
+/**
+ * @brief Free all the local memory & detach from the shared memory
+ *
  */
 static void cf2trace_end( void )
 {
@@ -686,18 +733,20 @@ static void cf2trace_end( void )
 	return;
 }
 
-/*
- * thread_update_list() -
+/**
+ * @brief
+ *
+ * @param arg
+ * @return int
  */
-static thr_ret thread_update_list( void *arg )
+static int thread_update_list( void *arg )
 {
-	int i;
 	int update_flag = 0;
 
 	logit("ot", "cf2trace: Updating the channels list...\n");
 	UpdateStatus = LIST_UNDER_UPDATE;
 /* */
-	for ( i = 0; i < nList; i++ ) {
+	for ( int i = 0; i < nList; i++ ) {
 		if ( cf2tra_list_db_fetch( SQLChannelTable[i], &DBInfo, CF2TRA_LIST_UPDATING ) < 0 ) {
 			logit("e", "cf2trace: Fetching channels list(%s) from remote database error!\n", SQLChannelTable[i]);
 			update_flag = 1;
@@ -727,13 +776,16 @@ static thr_ret thread_update_list( void *arg )
 /* Just exit this thread */
 	KillSelfThread();
 
-	return NULL;
+	return 0;
 }
 
-/*
+/**
+ * @brief
  *
+ * @param configfile
+ * @return int
  */
-static int update_list_configfile( char *configfile )
+static int update_list_configfile( const char *configfile )
 {
 	char *com;
 	char *str;
@@ -787,8 +839,8 @@ static int update_list_configfile( char *configfile )
 			}
 		/* See if there were any errors processing the command */
 			if ( k_err() ) {
-			   logit("e", "cf2trace: Bad <%s> command in <%s> when updating!\n", com, configfile);
-			   return -1;
+				logit("e", "cf2trace: Bad <%s> command in <%s> when updating!\n", com, configfile);
+				return -1;
 			}
 		}
 		nfiles = k_close();
@@ -797,14 +849,19 @@ static int update_list_configfile( char *configfile )
 	return 0;
 }
 
-/*
+/**
+ * @brief
  *
+ * @param dest
+ * @param src
+ * @param cfactor
+ * @return int
  */
 static int apply_cf_tracedata_single( TracePacket *dest, const TracePacket *src, const double cfactor )
 {
-	float *destdata_f    = (float *)(&dest->trh2x + 1);
-	float *destdata_fend = (float *)(&dest->msg[MAX_TRACEBUF_SIZ]);
-	int    dest_nsamp    = 0;
+	float       *destdata_f    = (float *)(&dest->trh2x + 1);
+	float       *destdata_fend = (float *)(&dest->msg[MAX_TRACEBUF_SIZ]);
+	register int dest_nsamp    = 0;
 
 /* */
 	if ( dest == src )
@@ -820,7 +877,7 @@ static int apply_cf_tracedata_single( TracePacket *dest, const TracePacket *src,
 		}
 	}
 /* Source datatype is single precision floating number */
-	if ( src->trh2.datatype[1] == '4' && (src->trh2.datatype[0] == 'f' || src->trh2.datatype[0] == 't') ) {
+	else if ( src->trh2.datatype[1] == '4' && (src->trh2.datatype[0] == 'f' || src->trh2.datatype[0] == 't') ) {
 		const float *srcdata_f    = (float *)(&src->trh2 + 1);
 		const float *srcdata_fend = srcdata_f + src->trh2.nsamp;
 	/* */
@@ -853,14 +910,19 @@ static int apply_cf_tracedata_single( TracePacket *dest, const TracePacket *src,
 	return dest_nsamp;
 }
 
-/*
+/**
+ * @brief
  *
+ * @param dest
+ * @param src
+ * @param cfactor
+ * @return int
  */
 static int apply_cf_tracedata_double( TracePacket *dest, const TracePacket *src, const double cfactor )
 {
-	double *destdata_d    = (double *)(&dest->trh2x + 1);
-	double *destdata_dend = (double *)(&dest->msg[MAX_TRACEBUF_SIZ]);
-	int     dest_nsamp    = 0;
+	double      *destdata_d    = (double *)(&dest->trh2x + 1);
+	double      *destdata_dend = (double *)(&dest->msg[MAX_TRACEBUF_SIZ]);
+	register int dest_nsamp    = 0;
 
 /* */
 	if ( dest == src )
@@ -876,7 +938,7 @@ static int apply_cf_tracedata_double( TracePacket *dest, const TracePacket *src,
 		}
 	}
 /* Source datatype is single precision floating number */
-	if ( src->trh2.datatype[1] == '4' && (src->trh2.datatype[0] == 'f' || src->trh2.datatype[0] == 't') ) {
+	else if ( src->trh2.datatype[1] == '4' && (src->trh2.datatype[0] == 'f' || src->trh2.datatype[0] == 't') ) {
 		const float *srcdata_f    = (float *)(&src->trh2 + 1);
 		const float *srcdata_fend = srcdata_f + src->trh2.nsamp;
 	/* */

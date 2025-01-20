@@ -1,21 +1,28 @@
-/*
- * cf2trace.h
+/**
+ * @file cf2trace.h
+ * @author Benjamin Ming Yang (b98204032@gmail.com) @ Department of Geology, National Taiwan University
+ * @brief
+ * @date 2018-03-20
  *
- * Header file for unified plateform station list data.
- *
- * Benjamin Yang
- * Department of Geology
- * National Taiwan University
- *
- * March, 2018
+ * @copyright Copyright (c) 2018
  *
  */
 #pragma once
 
+/**
+ * @name For trace2 header information
+ *
+ */
 #include <trace_buf.h>
-/* */
+/**
+ * @name For information request from SQL server, used by dblist library.
+ *
+ */
 #define CF2TRA_INFO_FROM_SQL  6
-/* */
+/**
+ * @name For 'FloatPrecision' setting
+ *
+ */
 #define CF2TRA_FLOAT_PRECISION_TABLE \
 		X(CF2TRA_FLOAT_SINGLE, "single" ) \
 		X(CF2TRA_FLOAT_DOUBLE, "double" ) \
@@ -27,7 +34,10 @@ typedef enum {
 } CF2TRA_FLOAT_PRECISION_LIST;
 #undef X
 
-/* Trace info related struct */
+/**
+ * @name Trace info related struct
+ *
+ */
 typedef struct {
 	uint16_t seq;
 	uint16_t recordtype;

@@ -1,5 +1,17 @@
+/**
+ * @file cf2trace_list.c
+ * @author Benjamin Ming Yang (b98204032@gmail.com) @ Department of Geology, National Taiwan University
+ * @brief
+ * @date 2018-03-20
+ *
+ * @copyright Copyright (c) 2018
+ *
+ */
 #define _GNU_SOURCE
-/* Standard C header include */
+/**
+ * @name Standard C header include
+ *
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -7,16 +19,26 @@
 #include <search.h>
 #include <time.h>
 #include <ctype.h>
-/* Earthworm environment header include */
+/**
+ * @name Earthworm environment header include
+ *
+ */
 #include <earthworm.h>
-/* Local header include */
+/**
+ * @name Local header include
+ *
+ */
 #include <dblist.h>
 #include <dbinfo.h>
 #include <dl_chain_list.h>
 #include <recordtype.h>
 #include <cf2trace.h>
 #include <cf2trace_list.h>
-/* */
+
+/**
+ * @brief
+ *
+ */
 typedef struct {
 	int     count;      /* Number of clients in the list */
 	time_t  timestamp;  /* Time of the last time updated */
@@ -25,9 +47,12 @@ typedef struct {
 	void   *root_t;     /* Temporary root of binary searching tree */
 } TraceList;
 
-/* */
+/**
+ * @name Functions prototype in this source file
+ *
+ */
 static int         fetch_list_sql( TraceList *, const char *, const DBINFO *, const int );
-static TraceList  *init_trace_list( void );
+static TraceList  *create_trace_list( void );
 static void        destroy_trace_list( TraceList * );
 static int         compare_scnl( const void *, const void * );
 static void        dummy_func( void * );
@@ -39,22 +64,33 @@ static _TRACEINFO *create_new_traceinfo(
 static _TRACEINFO *enrich_traceinfo_raw(
 	_TRACEINFO *, const char *, const char *, const char *, const char *, const uint8_t, const double
 );
-/* */
+/**
+ * @name
+ *
+ */
 #if defined( _USE_SQL )
 static void extract_traceinfo_mysql(
 	char *, char *, char *, char *, uint8_t *, double *, const MYSQL_ROW, const unsigned long []
 );
 #endif
-/* */
+/**
+ * @brief
+ *
+ */
 static TraceList *TList = NULL;
 
-/*
- * cf2tra_list_db_fetch() -
+/**
+ * @brief
+ *
+ * @param table_chan
+ * @param dbinfo
+ * @param update
+ * @return int
  */
 int cf2tra_list_db_fetch( const char *table_chan, const DBINFO *dbinfo, const int update )
 {
 	if ( !TList ) {
-		TList = init_trace_list();
+		TList = create_trace_list();
 		if ( !TList ) {
 			logit("e", "cf2trace: Fatal! Trace list memory initialized error!\n");
 			return -3;
@@ -67,8 +103,12 @@ int cf2tra_list_db_fetch( const char *table_chan, const DBINFO *dbinfo, const in
 		return 0;
 }
 
-/*
+/**
+ * @brief Function for parsing the channel information line in list file.
  *
+ * @param line
+ * @param update
+ * @return int
  */
 int cf2tra_list_chan_line_parse( const char *line, const int update )
 {
@@ -83,7 +123,7 @@ int cf2tra_list_chan_line_parse( const char *line, const int update )
 
 /* */
 	if ( !TList ) {
-		TList = init_trace_list();
+		TList = create_trace_list();
 		if ( !TList ) {
 			logit("e", "cf2trace: Fatal! Trace list memory initialized error!\n");
 			return -3;
@@ -104,8 +144,9 @@ int cf2tra_list_chan_line_parse( const char *line, const int update )
 	return result;
 }
 
-/*
- * cf2tra_list_end() -
+/**
+ * @brief End the whole trace list service.
+ *
  */
 void cf2tra_list_end( void )
 {
@@ -115,8 +156,11 @@ void cf2tra_list_end( void )
 	return;
 }
 
-/*
- * cf2tra_list_find() -
+/**
+ * @brief Find the trace info that match the input trace header.
+ *
+ * @param trh2x
+ * @return _TRACEINFO*
  */
 _TRACEINFO *cf2tra_list_find( const TRACE2X_HEADER *trh2x )
 {
@@ -137,8 +181,9 @@ _TRACEINFO *cf2tra_list_find( const TRACE2X_HEADER *trh2x )
 	return result;
 }
 
-/*
- * cf2tra_list_tree_activate() -
+/**
+ * @brief
+ *
  */
 void cf2tra_list_tree_activate( void )
 {
@@ -156,8 +201,9 @@ void cf2tra_list_tree_activate( void )
 	return;
 }
 
-/*
- * cf2tra_list_tree_abandon() -
+/**
+ * @brief
+ *
  */
 void cf2tra_list_tree_abandon( void )
 {
@@ -169,8 +215,10 @@ void cf2tra_list_tree_abandon( void )
 	return;
 }
 
-/*
- * cf2tra_list_total_channel_get() -
+/**
+ * @brief Get the total channel number of the main trace list.
+ *
+ * @return int
  */
 int cf2tra_list_total_channel_get( void )
 {
@@ -187,20 +235,29 @@ int cf2tra_list_total_channel_get( void )
 	return result;
 }
 
-/*
- * cf2tra_list_timestamp_get() -
+/**
+ * @brief Get the timestamp of the main trace list.
+ *
+ * @return time_t
  */
 time_t cf2tra_list_timestamp_get( void )
 {
 	return TList->timestamp;
 }
 
-/*
+/**
+ * @name
  *
  */
 #if defined( _USE_SQL )
-/*
- * fetch_list_sql() - Get stations list from MySQL server
+/**
+ * @brief Get stations list from MySQL server.
+ *
+ * @param list
+ * @param table_chan
+ * @param dbinfo
+ * @param update
+ * @return int
  */
 static int fetch_list_sql( TraceList *list, const char *table_chan, const DBINFO *dbinfo, const int update )
 {
@@ -261,8 +318,17 @@ static int fetch_list_sql( TraceList *list, const char *table_chan, const DBINFO
 	return result;
 }
 
-/*
- * extract_traceinfo_mysql() -
+/**
+ * @brief
+ *
+ * @param sta
+ * @param net
+ * @param loc
+ * @param chan
+ * @param rtype
+ * @param cfactor
+ * @param sql_row
+ * @param row_lengths
  */
 static void extract_traceinfo_mysql(
 	char *sta, char *net, char *loc, char *chan, uint8_t *rtype, double *cfactor,
@@ -282,8 +348,14 @@ static void extract_traceinfo_mysql(
 }
 
 #else
-/*
- * fetch_list_sql() - Fake function
+/**
+ * @brief Fake function.
+ *
+ * @param list
+ * @param table_chan
+ * @param dbinfo
+ * @param update
+ * @return int
  */
 static int fetch_list_sql( TraceList *list, const char *table_chan, const DBINFO *dbinfo, const int update )
 {
@@ -295,14 +367,16 @@ static int fetch_list_sql( TraceList *list, const char *table_chan, const DBINFO
 }
 #endif
 
-/*
- * init_trace_list() -
+/**
+ * @brief Create a whole new trace list.
+ *
+ * @return TraceList*
  */
-static TraceList *init_trace_list( void )
+static TraceList *create_trace_list( void )
 {
-	TraceList *result = (TraceList *)calloc(1, sizeof(TraceList));
+	TraceList *result;
 
-	if ( result ) {
+	if ( (result = (TraceList *)calloc(1, sizeof(TraceList))) ) {
 		result->count     = 0;
 		result->timestamp = time(NULL);
 		result->entry     = NULL;
@@ -313,12 +387,14 @@ static TraceList *init_trace_list( void )
 	return result;
 }
 
-/*
- * destroy_trace_list() -
+/**
+ * @brief Destroy the whole trace list.
+ *
+ * @param list
  */
 static void destroy_trace_list( TraceList *list )
 {
-	if ( list != (TraceList *)NULL ) {
+	if ( list ) {
 	/* */
 		tdestroy(list->root, dummy_func);
 		dl_list_destroy( (DL_NODE **)&list->entry, free );
@@ -328,8 +404,13 @@ static void destroy_trace_list( TraceList *list )
 	return;
 }
 
-/*
- *  append_traceinfo_list() - Appending the new client to the client list.
+/**
+ * @brief Append the new trace to the trace list.
+ *
+ * @param list
+ * @param traceinfo
+ * @param update
+ * @return _TRACEINFO*
  */
 static _TRACEINFO *append_traceinfo_list( TraceList *list, _TRACEINFO *traceinfo, const int update )
 {
@@ -372,42 +453,63 @@ except:
 	return NULL;
 }
 
-/*
- *  create_new_traceinfo() - Creating new channel info memory space with the input value.
+/**
+ * @brief Create new channel info memory space with the input value.
+ *
+ * @param sta
+ * @param net
+ * @param loc
+ * @param chan
+ * @param rtype
+ * @param cfactor
+ * @return _TRACEINFO*
  */
 static _TRACEINFO *create_new_traceinfo(
 	const char *sta, const char *net, const char *loc, const char *chan, const uint8_t rtype, const double cfactor
 ) {
-	_TRACEINFO *result = (_TRACEINFO *)calloc(1, sizeof(_TRACEINFO));
+	_TRACEINFO *result;
 
 /* */
-	if ( result )
+	if ( (result = (_TRACEINFO *)calloc(1, sizeof(_TRACEINFO))) )
 		enrich_traceinfo_raw( result, sta, net, loc, chan, rtype, cfactor );
 
 	return result;
 }
 
-/*
+/**
+ * @brief Enrich channel info to memory space with the input value.
  *
+ * @param dest
+ * @param sta
+ * @param net
+ * @param loc
+ * @param chan
+ * @param rtype
+ * @param cfactor
+ * @return _TRACEINFO*
  */
 static _TRACEINFO *enrich_traceinfo_raw(
-	_TRACEINFO *traceinfo, const char *sta, const char *net, const char *loc, const char *chan,
+	_TRACEINFO *dest, const char *sta, const char *net, const char *loc, const char *chan,
 	const uint8_t rtype, const double cfactor
 ) {
 /* */
-	memcpy(traceinfo->sta, sta, TRACE2_STA_LEN);
-	memcpy(traceinfo->net, net, TRACE2_NET_LEN);
-	memcpy(traceinfo->loc, loc, TRACE2_LOC_LEN);
-	memcpy(traceinfo->chan, chan, TRACE2_CHAN_LEN);
-	traceinfo->seq = 0;
-	traceinfo->recordtype = rtype;
-	traceinfo->conversion_factor = cfactor;
+	memcpy(dest->sta, sta, TRACE2_STA_LEN);
+	memcpy(dest->net, net, TRACE2_NET_LEN);
+	memcpy(dest->loc, loc, TRACE2_LOC_LEN);
+	memcpy(dest->chan, chan, TRACE2_CHAN_LEN);
+	dest->seq = 0;
+	dest->recordtype = rtype;
+	dest->conversion_factor = cfactor;
 
-	return traceinfo;
+	return dest;
 }
 
-/*
- * update_traceinfo()
+/**
+ * @brief Function only update the traceinfo for the same trace.
+ *
+ * @param dest
+ * @param src
+ * @return _TRACEINFO*
  */
 static _TRACEINFO *update_traceinfo( _TRACEINFO *dest, const _TRACEINFO *src )
 {
@@ -419,8 +521,12 @@ static _TRACEINFO *update_traceinfo( _TRACEINFO *dest, const _TRACEINFO *src )
 	return dest;
 }
 
-/*
- * compare_scnl() - the SCNL compare function of binary tree search
+/**
+ * @brief SCNL compare function of binary tree search
+ *
+ * @param a
+ * @param b
+ * @return int
  */
 static int compare_scnl( const void *a, const void *b )
 {
@@ -437,8 +543,10 @@ static int compare_scnl( const void *a, const void *b )
 	return memcmp(tmpa->loc, tmpb->loc, TRACE2_LOC_LEN);
 }
 
-/*
- * dummy_func() -
+/**
+ * @brief Just a dummy function.
+ *
+ * @param node
  */
 static void dummy_func( void *node )
 {

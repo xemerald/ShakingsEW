@@ -1,4 +1,3 @@
-
 # This is cf2trace's parameter file
 
 # Basic Earthworm setup:
