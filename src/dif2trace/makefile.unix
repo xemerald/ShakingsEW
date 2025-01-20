@@ -25,6 +25,11 @@ OBJS = \
 	dif2trace_filter.o
 
 #
+# Main rule
+#
+main: dif2trace
+
+#
 # Compile rule for dif2trace module
 #
 dif2trace: $(OBJS)

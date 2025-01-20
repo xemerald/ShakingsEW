@@ -25,13 +25,18 @@ OBJS = \
 	cf2trace_list.o
 
 #
+# Main rule
+#
+main: cf2trace
+#
+main_sql: cf2trace
+
+#
 # Compile rule for cf2trace module
 #
 cf2trace: $(OBJS)
 	@echo Creating $@...
 	@$(CC) $(CFLAGS) -o $(EW_BINDIR)/$@ $(OBJS) $(EWLIBS) $(LCLIBS) $(LIBS)
-
-cf2trace_sql: cf2trace
 
 # Optional MySQL rule
 #
