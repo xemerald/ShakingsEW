@@ -1,13 +1,28 @@
-/*
+/**
+ * @file respectra_list.h
+ * @author Benjamin Ming Yang @ Department of Geology, National Taiwan University (b98204032@gmail.com)
+ * @brief
+ * @date 2018-03-20
+ *
+ * @copyright Copyright (c) 2018-now
  *
  */
 #pragma once
-/* Earthworm environment header include */
+/**
+ * @name Earthworm environment header include
+ *
+ */
 #include <trace_buf.h>
-/* Local header include */
+/**
+ * @name Local header include
+ *
+ */
 #include <respectra.h>
 
-/* Function prototype */
+/**
+ * @name External functions prototypes
+ *
+ */
 _TRACEINFO *rsp_list_search( const TRACE2X_HEADER * );
 _TRACEINFO *rsp_list_find( const TRACE2X_HEADER * );
 void        rsp_list_end( void );

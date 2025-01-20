@@ -1,39 +1,71 @@
+/**
+ * @file respectra_pmat.c
+ * @author Benjamin Ming Yang @ Department of Geology, National Taiwan University (b98204032@gmail.com)
+ * @brief
+ * @date 2018-03-20
+ *
+ * @copyright Copyright (c) 2018-now
+ *
+ */
 #define _GNU_SOURCE
-/* Standard C header include */
+/**
+ * @name Standard C header include
+ *
+ */
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
-#include <string.h>
 #include <search.h>
 #include <float.h>
 #include <math.h>
-/* Earthworm environment header include */
+/**
+ * @name Earthworm environment header include
+ *
+ */
 #include <earthworm.h>
 #include <trace_buf.h>
-/* Local header include */
+/**
+ * @name Local header include
+ *
+ */
 #include <respectra.h>
 #include <respectra_list.h>
 #include <respectra_pmat.h>
 
+/**
+ * @name Pi-related definitions
+ *
+ */
 #define PI  3.141592653589793238462643383279f
 #define PI2 6.283185307179586476925286766559f
 
+/**
+ * @name Functions prototype in this source file
+ *
+ */
 static PMATRIX design_pmatrix( const double, const double, const double );
 static int     compare_delta( const void *, const void * ); /* The compare function of binary tree search */
 
-static void  *PMatrixRoot   = NULL;         /* Root of filter binary tree */
+/**
+ * @brief Root of matrix binary tree
+ *
+ */
+static void  *PMatrixRoot   = NULL;
 static double _DampingRatio  = 0.0;
 
-/* */
+/**
+ * @name Used parameters.
+ *
+ */
 double AngularFreq;
 double AFreqSquare;
 double DAFreqDamping;
 
-/*
- * rsp_pmat_init( ) -- Initialization function of filter chain.
- * Arguments:
- * Returns:
- *    0 = Normal.
+/**
+ * @brief Initialize the parameters.
+ *
+ * @param damping
+ * @param period
+ * @return int
  */
 int rsp_pmat_init( const double damping, const double period )
 {
@@ -46,13 +78,12 @@ int rsp_pmat_init( const double damping, const double period )
 	return 0;
 }
 
-/*
- * rsp_pmat_search( ) -- Insert the trace to the tree.
- * Arguments:
- *   trh2x = Pointer of the trace you want to find.
- * Returns:
- *    NULL = Didn't find the trace.
- *   !NULL = The Pointer to the trace.
+/**
+ * @brief Find the PMatrix that match the trace's delta.
+ *        If not, insert a new PMatrix to the tree.
+ *
+ * @param traceptr
+ * @return PMATRIX*
  */
 PMATRIX *rsp_pmat_search( const _TRACEINFO *traceptr )
 {
@@ -60,12 +91,12 @@ PMATRIX *rsp_pmat_search( const _TRACEINFO *traceptr )
 	PMATRIX       *pmatptr = NULL;
 
 /* Test if already in the tree */
-	if ( (pmatptr = rsp_pmat_find( traceptr )) == NULL ) {
+	if ( !(pmatptr = rsp_pmat_find( traceptr )) ) {
 		trpmatptr          = (TRACE_PMATRIX *)calloc(1, sizeof(TRACE_PMATRIX));
 		trpmatptr->delta   = traceptr->delta / traceptr->intsteps;
 		trpmatptr->pmatrix = design_pmatrix( _DampingRatio, AngularFreq, trpmatptr->delta );
 
-		if ( (trpmatptr = tsearch(trpmatptr, &PMatrixRoot, compare_delta)) == NULL ) {
+		if ( !(trpmatptr = tsearch(trpmatptr, &PMatrixRoot, compare_delta)) ) {
 		/* Something error when insert into the tree */
 			return NULL;
 		}
@@ -77,13 +108,11 @@ PMATRIX *rsp_pmat_search( const _TRACEINFO *traceptr )
 	return pmatptr;
 }
 
-/*
- * rsp_pmat_find( ) -- Output the Trace that match the SCNL.
- * Arguments:
- *   trh2x = Pointer of the trace you want to find.
- * Returns:
- *    NULL = Didn't find the trace.
- *   !NULL = The Pointer to the trace.
+/**
+ * @brief Output the PMatrix that match the trace's delta.
+ *
+ * @param traceptr
+ * @return PMATRIX*
  */
 PMATRIX *rsp_pmat_find( const _TRACEINFO *traceptr )
 {
@@ -92,7 +121,7 @@ PMATRIX *rsp_pmat_find( const _TRACEINFO *traceptr )
 
 	key.delta = traceptr->delta / traceptr->intsteps;
 /* Find which trace */
-	if ( (trpmatptr = tfind(&key, &PMatrixRoot, compare_delta)) == NULL ) {
+	if ( !(trpmatptr = tfind(&key, &PMatrixRoot, compare_delta)) ) {
 	/* Not found in trace table */
 		return NULL;
 	}
@@ -102,12 +131,9 @@ PMATRIX *rsp_pmat_find( const _TRACEINFO *traceptr )
 	return &trpmatptr->pmatrix;
 }
 
-/*
- * rsp_pmat_end( ) -- End process of PMatrix list.
- * Arguments:
- *   None.
- * Returns:
- *   None.
+/**
+ * @brief End process of this PMatrix list service.
+ *
  */
 void rsp_pmat_end( void )
 {
@@ -116,8 +142,13 @@ void rsp_pmat_end( void )
 	return;
 }
 
-/*
+/**
+ * @brief
  *
+ * @param damping
+ * @param afreq
+ * @param delta
+ * @return PMATRIX
  */
 static PMATRIX design_pmatrix( const double damping, const double afreq, const double delta )
 {
@@ -159,8 +190,12 @@ static PMATRIX design_pmatrix( const double damping, const double afreq, const d
 	return result;
 }
 
-/*
- * compare_delta() - the delta compare function of binary tree search
+/**
+ * @brief The delta compare function of binary tree search.
+ *
+ * @param a
+ * @param b
+ * @return int
  */
 static int compare_delta( const void *a, const void *b )
 {

@@ -1,4 +1,3 @@
-
 # This is respectra's parameter file
 
 # Basic Earthworm setup:

@@ -25,22 +25,16 @@ OBJS = \
 	respectra_pmat.o
 
 #
+# Main rule
+#
+main: respectra
+
+#
 # Compile rule for respectra module
 #
 respectra: $(OBJS)
 	@echo Creating $@...
 	@$(CC) $(CFLAGS) -o $(EW_BINDIR)/$@ $(OBJS) $(EWLIBS) $(LCLIBS) $(LIBS)
-
-#
-# Compile rule for Earthworm version under 7.09
-#
-ver_709: respectra
-
-#
-# Compile rule for Earthworm version over 7.10
-#
-ver_710: CFLAGS+=-D_V710
-ver_710: respectra
 
 #
 #

@@ -1,32 +1,54 @@
+/**
+ * @file respectra.c
+ * @author Benjamin Ming Yang @ Department of Geology, National Taiwan University (b98204032@gmail.com)
+ * @brief
+ * @date 2018-03-20
+ *
+ * @copyright Copyright (c) 2018-now
+ *
+ */
 #ifdef _OS2
 #define INCL_DOSMEMMGR
 #define INCL_DOSSEMAPHORES
 #include <os2.h>
 #endif
-/* Standard C header include */
+/**
+ * @name Standard C header include
+ *
+ */
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 #include <ctype.h>
 #include <math.h>
 #include <float.h>
 #include <time.h>
-/* Earthworm environment header include */
+/**
+ * @name Earthworm environment header include
+ *
+ */
 #include <earthworm.h>
 #include <kom.h>
 #include <transport.h>
 #include <lockfile.h>
 #include <trace_buf.h>
-/* Local header include */
+/**
+ * @name Local header include
+ *
+ */
 #include <recordtype.h>
 #include <scnlfilter.h>
 #include <respectra.h>
 #include <respectra_list.h>
 #include <respectra_pmat.h>
 
-/* Functions prototype in this source file */
-static void respectra_config( char * );
+/**
+ * @name Functions prototype in this source file
+ *
+ */
+static void respectra_config( const char * );
 static void respectra_lookup( void );
 static void respectra_status( unsigned char, short, char * );
 static void respectra_end( void );  /* Free all the local memory & close socket */
@@ -35,7 +57,10 @@ static void init_traceinfo( const TRACE2X_HEADER *, _TRACEINFO * );
 static void operation_rsp( _TRACEINFO *, TracePacket *, int );
 static void operation_rmavg( _TRACEINFO *, TracePacket * );
 
-/* Ring messages things */
+/**
+ * @name Ring messages things
+ *
+ */
 static SHM_INFO InRegion;      /* shared memory region to use for i/o    */
 static SHM_INFO OutRegion;     /* shared memory region to use for i/o    */
 /* */
@@ -44,11 +69,10 @@ static MSG_LOGO Putlogo;           /* array for output module, type, instid     
 static MSG_LOGO Getlogo[MAXLOGO];  /* array for requesting module, type, instid */
 static pid_t    MyPid;             /* for restarts by startstop                 */
 
-#define OUTPUT_TYPE_SD   0
-#define OUTPUT_TYPE_SV   1
-#define OUTPUT_TYPE_SA   2
-
-/* Things to read or derive from configuration file */
+/**
+ * @name Things to read or derive from configuration file
+ *
+ */
 static char     InRingName[MAX_RING_STR];   /* name of transport ring for i/o    */
 static char     OutRingName[MAX_RING_STR];  /* name of transport ring for i/o    */
 static char     MyModName[MAX_MOD_STR];     /* speak as this module name/id      */
@@ -62,7 +86,10 @@ static double   NaturalPeriod = 1.0;        /* The period for calculating, defau
 static double   GainFactor    = 1.0;        /* The gain factor or amplify factor for the raw data, default is 1.0 */
 static uint8_t  SCNLFilterSwitch = 0;       /* 0 if no filter command in the file */
 
-/* Things to look up in the earthworm.h tables with getutil.c functions */
+/**
+ * @name Things to look up in the earthworm.h tables with getutil.c functions
+ *
+ */
 static int64_t InRingKey;       /* key of transport ring for i/o     */
 static int64_t OutRingKey;      /* key of transport ring for i/o     */
 static uint8_t InstId;          /* local installation id             */
@@ -71,20 +98,30 @@ static uint8_t TypeHeartBeat;
 static uint8_t TypeError;
 static uint8_t TypeTracebuf2;
 
-/* Error messages used by respectra */
+/**
+ * @name Error messages used by cf2trace
+ *
+ */
 #define  ERR_MISSMSG       0   /* message missed in transport ring       */
 #define  ERR_TOOBIG        1   /* retreived msg too large for buffer     */
 #define  ERR_NOTRACK       2   /* msg retreived; tracking limit exceeded */
 #define  ERR_QUEUE         3   /* error queueing message for sending      */
 static char Text[150];         /* string for log/error messages          */
 
-/* Extern variables initialized by PMatrixInit function */
+/**
+ * @name Extern variables initialized by PMatrixInit function
+ *
+ */
 extern double  AngularFreq;
 extern double  AFreqSquare;
 extern double  DAFreqDamping;
 
-/*
+/**
+ * @brief Main entry.
  *
+ * @param argc
+ * @param argv
+ * @return int
  */
 int main ( int argc, char **argv )
 {
@@ -209,7 +246,7 @@ int main ( int argc, char **argv )
 
 		/* Process the message */
 			if ( reclogo.type == TypeTracebuf2 ) {
-				if ( !TRACE2_HEADER_VERSION_IS_21(&(tracebuffer.trh2)) ) {
+				if ( !TRACE2_HEADER_VERSION_IS_20(&tracebuffer.trh2) && !TRACE2_HEADER_VERSION_IS_21(&tracebuffer.trh2) ) {
 					printf(
 						"respectra: SCNL %s.%s.%s.%s version is invalid, please check it!\n",
 						tracebuffer.trh2.sta, tracebuffer.trh2.chan, tracebuffer.trh2.net, tracebuffer.trh2.loc
@@ -313,6 +350,11 @@ int main ( int argc, char **argv )
 
 			/* Record the time that the trace last updated */
 				traceptr->lasttime = tracebuffer.trh2x.endtime;
+			/* */
+				if ( TRACE2_HEADER_VERSION_IS_20(&tracebuffer.trh2) ) {
+					tracebuffer.trh2x.x.v21.conversion_factor = 1.0;
+					tracebuffer.trh2x.version[1] = TRACE2_VERSION11;
+				}
 			/* Update the conversion factor with the gain factor */
 				tracebuffer.trh2x.x.v21.conversion_factor *= GainFactor;
 			/* Wait for the D.C. */
@@ -355,28 +397,32 @@ exit_procedure:
 	return 0;
 }
 
-/*
- * respectra_config() - processes command file(s) using kom.c functions;
- *                      exits if any errors are encountered.
+/**
+ * @brief Number of required commands you expect to process
+ *
  */
-static void respectra_config( char *configfile )
+#define CONDFIG_NUM_COMMAND  8
+
+/**
+ * @brief processes command file(s) using kom.c functions;
+ *        exits if any errors are encountered.
+ *
+ * @param configfile
+ */
+static void respectra_config( const char *configfile )
 {
-	char  init[8];     /* init flags, one byte for each required command */
+	char  init[CONDFIG_NUM_COMMAND];  /* init flags, one byte for each required command */
 	char *com;
 	char *str;
-
-	int ncommand;     /* # of required commands you expect to process   */
-	int nmiss;        /* number of required commands that were missed   */
-	int nfiles;
-	int success;
-	int i;
+	int   nmiss;                      /* number of required commands that were missed   */
+	int   nfiles;
+	int   success;
 
 /* Set to zero one init flag for each required command */
-	ncommand = 8;
-	for( i = 0; i < ncommand; i++ )
+	for( int i = 0; i < CONDFIG_NUM_COMMAND; i++ )
 		init[i] = 0;
 /* Open the main configuration file */
-	nfiles = k_open( configfile );
+	nfiles = k_open(configfile);
 	if ( nfiles == 0 ) {
 		logit("e", "respectra: Error opening command file <%s>; exiting!\n", configfile);
 		exit(-1);
@@ -398,7 +444,7 @@ static void respectra_config( char *configfile )
 
 		/* Open a nested configuration file */
 			if ( com[0] == '@' ) {
-				success = nfiles+1;
+				success = nfiles + 1;
 				nfiles  = k_open(&com[1]);
 				if ( nfiles != success ) {
 					logit("e", "respectra: Error opening command file <%s>; exiting!\n", &com[1]);
@@ -444,7 +490,7 @@ static void respectra_config( char *configfile )
 				if ( str ) {
 					char typestr[8];
 					memcpy(typestr, str, 8);
-					for ( i = 0; i < 8; i++ )
+					for ( int i = 0; i < 8; i++ )
 						typestr[i] = tolower(typestr[i]);
 				/* Compare the type string */
 					if ( !strncmp(typestr, "sa", 2) ) {
@@ -534,12 +580,12 @@ static void respectra_config( char *configfile )
 
 /* After all files are closed, check init flags for missed commands */
 	nmiss = 0;
-	for ( i = 0; i < ncommand; i++ )
+	for ( int i = 0; i < CONDFIG_NUM_COMMAND; i++ )
 		if ( !init[i] )
 			nmiss++;
 /* */
 	if ( nmiss ) {
-		logit( "e", "respectra: ERROR, no " );
+		logit("e", "respectra: ERROR, no ");
 		if ( !init[0] ) logit("e", "<LogFile> "              );
 		if ( !init[1] ) logit("e", "<MyModuleId> "           );
 		if ( !init[2] ) logit("e", "<InputRing> "            );
@@ -556,8 +602,9 @@ static void respectra_config( char *configfile )
 	return;
 }
 
-/*
- * respectra_lookup() - Look up important info from earthworm.h tables
+/**
+ * @brief Look up important info from earthworm.h tables
+ *
  */
 static void respectra_lookup( void )
 {
@@ -597,9 +644,13 @@ static void respectra_lookup( void )
 	return;
 }
 
-/*
- * respectra_status() - builds a heartbeat or error message & puts it into
- *                      shared memory.  Writes errors to log file & screen.
+/**
+ * @brief Builds a heartbeat or error message & puts it into shared memory.
+ *        Writes errors to log file & screen.
+ *
+ * @param type
+ * @param ierr
+ * @param note
  */
 static void respectra_status( unsigned char type, short ierr, char *note )
 {
@@ -628,18 +679,19 @@ static void respectra_status( unsigned char type, short ierr, char *note )
 /* Write the message to shared memory */
 	if ( tport_putmsg(&InRegion, &logo, size, msg) != PUT_OK ) {
 		if ( type == TypeHeartBeat ) {
-			logit("et", "respectra:  Error sending heartbeat.\n");
+			logit("et", "respectra: Error sending heartbeat.\n");
 		}
 		else if ( type == TypeError ) {
-			logit("et", "respectra:  Error sending error:%d.\n", ierr);
+			logit("et", "respectra: Error sending error:%d.\n", ierr);
 		}
 	}
 
 	return;
 }
 
-/*
- * respectra_end() - free all the local memory & close socket
+/**
+ * @brief Free all the local memory & detach from the shared memory.
+ *
  */
 static void respectra_end( void )
 {
@@ -652,12 +704,15 @@ static void respectra_end( void )
 	return;
 }
 
-/*
+/**
+ * @brief
  *
+ * @param trh2x
+ * @param traceptr
  */
 static void init_traceinfo( const TRACE2X_HEADER *trh2x, _TRACEINFO *traceptr )
 {
-	traceptr->firsttime     = FALSE;
+	traceptr->firsttime     = false;
 	traceptr->readycount    = 0;
 	traceptr->lasttime      = 0.0;
 	traceptr->lastsample    = 0.0;
