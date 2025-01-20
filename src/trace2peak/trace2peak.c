@@ -1,37 +1,62 @@
+/**
+ * @file trace2peak.c
+ * @author Benjamin Ming Yang @ Department of Geology, National Taiwan University (b98204032@gmail.com)
+ * @brief
+ * @date 2018-03-20
+ *
+ * @copyright Copyright (c) 2018-now
+ *
+ */
 #ifdef _OS2
 #define INCL_DOSMEMMGR
 #define INCL_DOSSEMAPHORES
 #include <os2.h>
 #endif
-/* Standard C header include */
+/**
+ * @name Standard C header include
+ *
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <string.h>
 #include <math.h>
 #include <time.h>
-/* Earthworm environment header include */
+/**
+ * @name Earthworm environment header include
+ *
+ */
 #include <earthworm.h>
 #include <kom.h>
 #include <transport.h>
 #include <lockfile.h>
 #include <trace_buf.h>
-/* Local header include */
+/**
+ * @name Local header include
+ *
+ */
 #include <scnlfilter.h>
 #include <recordtype.h>
 #include <tracepeak.h>
 #include <trace2peak.h>
 #include <trace2peak_list.h>
 
-/* Functions prototype in this source file */
-static void trace2peak_config( char * );
+/**
+ * @name Functions prototype in this source file
+ *
+ */
+static void trace2peak_config( const char * );
 static void trace2peak_lookup( void );
 static void trace2peak_status( unsigned char, short, char * );
 static void trace2peak_end( void );                /* Free all the local memory & close socket */
 
 static void *proc_com_pv_type( const char * );
 
-/* Ring messages things */
+/**
+ * @name Ring messages things
+ *
+ */
 static SHM_INFO InRegion;      /* shared memory region to use for i/o    */
 static SHM_INFO OutRegion;     /* shared memory region to use for i/o    */
 /* */
@@ -40,7 +65,10 @@ static MSG_LOGO Putlogo;              /* array for output module, type, instid  
 static MSG_LOGO Getlogo[MAXLOGO];     /* array for requesting module, type, instid */
 static pid_t    MyPid;                /* for restarts by startstop                 */
 
-/* Things to read or derive from configuration file */
+/**
+ * @name Things to read or derive from configuration file
+ *
+ */
 static char     InRingName[MAX_RING_STR];   /* name of transport ring for i/o    */
 static char     OutRingName[MAX_RING_STR];  /* name of transport ring for i/o    */
 static char     MyModName[MAX_MOD_STR];     /* speak as this module name/id      */
@@ -50,7 +78,10 @@ static uint16_t DriftCorrectThreshold;      /* seconds waiting for D.C. */
 static uint16_t nLogo = 0;
 static uint8_t  SCNLFilterSwitch = 0;       /* 0 if no filter command in the file    */
 
-/* Things to look up in the earthworm.h tables with getutil.c functions */
+/**
+ * @name Things to look up in the earthworm.h tables with getutil.c functions
+ *
+ */
 static int64_t InRingKey;       /* key of transport ring for i/o     */
 static int64_t OutRingKey;      /* key of transport ring for i/o     */
 static uint8_t InstId;          /* local installation id             */
@@ -60,14 +91,20 @@ static uint8_t TypeError;
 static uint8_t TypeTracebuf2 = 0;
 static uint8_t TypeTracePeak = 0;
 
-/* Error messages used by trace2peak */
+/**
+ * @name Error messages used by cf2trace
+ *
+ */
 #define  ERR_MISSMSG       0   /* message missed in transport ring       */
 #define  ERR_TOOBIG        1   /* retreived msg too large for buffer     */
 #define  ERR_NOTRACK       2   /* msg retreived; tracking limit exceeded */
 #define  ERR_QUEUE         3   /* error queueing message for sending      */
 static char Text[150];         /* string for log/error messages          */
 
-/* Main process macro */
+/**
+ * @brief Main process macro
+ *
+ */
 #define FOR_EACH_TRACE_DATA_MAIN(_DATA_PTR_TYPE, _INPUT_TRACEPACK, _TRACE_PTR, _OUTPUT_TRACEPEAK) \
 		__extension__({ \
 			double _tmp_time = (_OUTPUT_TRACEPEAK).peaktime; \
@@ -83,8 +120,12 @@ static char Text[150];         /* string for log/error messages          */
 			} \
 		})
 
-/*
+/**
+ * @brief Main entry.
  *
+ * @param argc
+ * @param argv
+ * @return int
  */
 int main ( int argc, char **argv )
 {
@@ -206,7 +247,7 @@ int main ( int argc, char **argv )
 
 		/* Process the message */
 			if ( reclogo.type == TypeTracebuf2 ) {
-				if ( !TRACE2_HEADER_VERSION_IS_21(&(tracebuffer.trh2)) ) {
+				if ( !TRACE2_HEADER_VERSION_IS_20(&tracebuffer.trh2) && !TRACE2_HEADER_VERSION_IS_21(&tracebuffer.trh2) ) {
 					printf(
 						"trace2peak: %s.%s.%s.%s version is invalid, please check it!\n",
 						tracebuffer.trh2.sta, tracebuffer.trh2.chan, tracebuffer.trh2.net, tracebuffer.trh2.loc
@@ -251,7 +292,7 @@ int main ( int argc, char **argv )
 						"trace2peak: New SCNL(%s.%s.%s.%s) received, starting to trace!\n",
 						traceptr->sta, traceptr->chan, traceptr->net, traceptr->loc
 					);
-					traceptr->firsttime  = FALSE;
+					traceptr->firsttime  = false;
 					traceptr->readycount = 0;
 					traceptr->delta      = 1.0/tracebuffer.trh2x.samprate;
 					traceptr->lasttime   = 0.0;
@@ -305,7 +346,7 @@ int main ( int argc, char **argv )
 								tracebuffer.trh2x.net, tracebuffer.trh2x.loc
 							);
 						/* Due to large gap, try to restart this trace */
-							traceptr->firsttime = TRUE;
+							traceptr->firsttime = true;
 							continue;
 						}
 					#ifdef _SEW_DEBUG
@@ -355,7 +396,7 @@ int main ( int argc, char **argv )
 					logit("e", "trace2peak: Error putting message in region %ld\n", OutRegion.key);
 			}
 		} while ( 1 );  /* end of message-processing-loop */
-		sleep_ew(50);  /* no more messages; wait for new ones to arrive */
+		sleep_ew(50);   /* no more messages; wait for new ones to arrive */
 	}
 /*-----------------------------end of main loop-------------------------------*/
 exit_procedure:
@@ -368,28 +409,33 @@ exit_procedure:
 	return 0;
 }
 
-/*
- * trace2peak_config() - processes command file(s) using kom.c functions;
- *                      exits if any errors are encountered.
+/**
+ * @brief Number of required commands you expect to process
+ *
  */
-static void trace2peak_config( char *configfile )
+#define CONDFIG_NUM_COMMAND  7
+
+/**
+ * @brief processes command file(s) using kom.c functions;
+ *        exits if any errors are encountered.
+ *
+ * @param configfile
+ */
+static void trace2peak_config( const char *configfile )
 {
-	char  init[7];     /* init flags, one byte for each required command */
+	char  init[CONDFIG_NUM_COMMAND];  /* init flags, one byte for each required command */
 	char *com;
 	char *str;
-
-	int ncommand;     /* # of required commands you expect to process   */
-	int nmiss;        /* number of required commands that were missed   */
-	int nfiles;
-	int success;
-	int i;
+	int   nmiss;                      /* number of required commands that were missed   */
+	int   nfiles;
+	int   success;
+	int   i;
 
 /* Set to zero one init flag for each required command */
-	ncommand = 7;
-	for ( i = 0; i < ncommand; i++ )
+	for ( i = 0; i < CONDFIG_NUM_COMMAND; i++ )
 		init[i] = 0;
 /* Open the main configuration file */
-	nfiles = k_open( configfile );
+	nfiles = k_open(configfile);
 	if ( nfiles == 0 ) {
 		logit("e", "trace2peak: Error opening command file <%s>; exiting!\n", configfile);
 		exit(-1);
@@ -411,7 +457,7 @@ static void trace2peak_config( char *configfile )
 
 		/* Open a nested configuration file */
 			if ( com[0] == '@' ) {
-				success = nfiles+1;
+				success = nfiles + 1;
 				nfiles  = k_open(&com[1]);
 				if ( nfiles != success ) {
 					logit("e", "trace2peak: Error opening command file <%s>; exiting!\n", &com[1]);
@@ -519,7 +565,7 @@ static void trace2peak_config( char *configfile )
 
 /* After all files are closed, check init flags for missed commands */
 	nmiss = 0;
-	for ( i = 0; i < ncommand; i++ )
+	for ( i = 0; i < CONDFIG_NUM_COMMAND; i++ )
 		if ( !init[i] )
 			nmiss++;
 /* */
@@ -540,18 +586,19 @@ static void trace2peak_config( char *configfile )
 	return;
 }
 
-/*
- * trace2peak_lookup() - Look up important info from earthworm.h tables
+/**
+ * @brief Look up important info from earthworm.h tables
+ *
  */
 static void trace2peak_lookup( void )
 {
 /* Look up keys to shared memory regions */
 	if ( ( InRingKey = GetKey(InRingName) ) == -1 ) {
-		fprintf(stderr, "trace2peak:  Invalid ring name <%s>; exiting!\n", InRingName);
+		fprintf(stderr, "trace2peak: Invalid ring name <%s>; exiting!\n", InRingName);
 		exit(-1);
 	}
 	if ( ( OutRingKey = GetKey(OutRingName) ) == -1 ) {
-		fprintf(stderr, "trace2peak:  Invalid ring name <%s>; exiting!\n", OutRingName);
+		fprintf(stderr, "trace2peak: Invalid ring name <%s>; exiting!\n", OutRingName);
 		exit(-1);
 	}
 /* Look up installations of interest */
@@ -585,16 +632,20 @@ static void trace2peak_lookup( void )
 	return;
 }
 
-/*
- * trace2peak_status() - builds a heartbeat or error message & puts it into
- *                       shared memory.  Writes errors to log file & screen.
+/**
+ * @brief Builds a heartbeat or error message & puts it into shared memory.
+ *        Writes errors to log file & screen.
+ *
+ * @param type
+ * @param ierr
+ * @param note
  */
 static void trace2peak_status( unsigned char type, short ierr, char *note )
 {
-	MSG_LOGO    logo;
-	char        msg[512];
-	uint64_t    size;
-	time_t      t;
+	MSG_LOGO logo;
+	char     msg[512];
+	uint64_t size;
+	time_t   t;
 
 /* Build the message */
 	logo.instid = InstId;
@@ -616,18 +667,19 @@ static void trace2peak_status( unsigned char type, short ierr, char *note )
 /* Write the message to shared memory */
 	if ( tport_putmsg(&InRegion, &logo, size, msg) != PUT_OK ) {
 		if ( type == TypeHeartBeat ) {
-			logit("et", "trace2peak:  Error sending heartbeat.\n");
+			logit("et", "trace2peak: Error sending heartbeat.\n");
 		}
 		else if ( type == TypeError ) {
-			logit("et", "trace2peak:  Error sending error:%d.\n", ierr);
+			logit("et", "trace2peak: Error sending error:%d.\n", ierr);
 		}
 	}
 
 	return;
 }
 
-/*
- * trace2peak_end() - free all the local memory & close socket
+/**
+ * @brief Free all the local memory & detach from the shared memory.
+ *
  */
 static void trace2peak_end( void )
 {
@@ -639,15 +691,19 @@ static void trace2peak_end( void )
 	return;
 }
 
-/*
+/**
+ * @brief
  *
+ * @param command
+ * @return void*
  */
 static void *proc_com_pv_type( const char *command )
 {
-	RECORD_TYPE *result = (RECORD_TYPE *)calloc(1, sizeof(RECORD_TYPE));
+	RECORD_TYPE *result;
 
 /* */
-	*result = typestr2num( command );
+	if ( (result = (RECORD_TYPE *)calloc(1, sizeof(RECORD_TYPE))) )
+		*result = typestr2num( command );
 
 	return result;
 }

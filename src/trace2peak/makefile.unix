@@ -23,22 +23,16 @@ OBJS = \
 	trace2peak_list.o
 
 #
+# Main rule
+#
+main: trace2peak
+
+#
 # Compile rule for trace2peak module
 #
 trace2peak: $(OBJS)
 	@echo Creating $@...
-	@$(CC) $(CFLAGS) -o $(EW_BINDIR)/$@ $(OBJS) $(EWLIBS) $(LCLIBS) $(LIBS) 
-
-#
-# Compile rule for Earthworm version under 7.09
-#
-ver_709: trace2peak
-
-#
-# Compile rule for Earthworm version over 7.10
-#
-ver_710: CFLAGS+=-D_V710
-ver_710: trace2peak
+	@$(CC) $(CFLAGS) -o $(EW_BINDIR)/$@ $(OBJS) $(EWLIBS) $(LCLIBS) $(LIBS)
 
 #
 #

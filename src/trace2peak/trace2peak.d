@@ -1,4 +1,3 @@
-
 # This is trace2peak's parameter file
 
 # Basic Earthworm setup:

@@ -641,11 +641,11 @@ static void cf2trace_lookup( void )
 {
 /* Look up keys to shared memory regions */
 	if ( ( InRingKey = GetKey(InRingName) ) == -1 ) {
-		fprintf(stderr, "cf2trace:  Invalid ring name <%s>; exiting!\n", InRingName);
+		fprintf(stderr, "cf2trace: Invalid ring name <%s>; exiting!\n", InRingName);
 		exit(-1);
 	}
 	if ( ( OutRingKey = GetKey(OutRingName) ) == -1 ) {
-		fprintf(stderr, "cf2trace:  Invalid ring name <%s>; exiting!\n", OutRingName);
+		fprintf(stderr, "cf2trace: Invalid ring name <%s>; exiting!\n", OutRingName);
 		exit(-1);
 	}
 /* Look up installations of interest */
@@ -685,10 +685,10 @@ static void cf2trace_lookup( void )
  */
 static void cf2trace_status( unsigned char type, short ierr, char *note )
 {
-	MSG_LOGO    logo;
-	char        msg[512];
-	uint64_t    size;
-	time_t      t;
+	MSG_LOGO logo;
+	char     msg[512];
+	uint64_t size;
+	time_t   t;
 
 /* Build the message */
 	logo.instid = InstId;
