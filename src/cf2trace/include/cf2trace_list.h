@@ -1,10 +1,10 @@
 /**
  * @file cf2trace_list.h
- * @author Benjamin Ming Yang (b98204032@gmail.com) @ Department of Geology, National Taiwan University
+ * @author Benjamin Ming Yang @ Department of Geology, National Taiwan University (b98204032@gmail.com)
  * @brief
  * @date 2018-03-20
  *
- * @copyright Copyright (c) 2018
+ * @copyright Copyright (c) 2018-now
  *
  */
 #pragma once

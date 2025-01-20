@@ -1,34 +1,56 @@
+/**
+ * @file dif2trace.c
+ * @author Benjamin Ming Yang @ Department of Geology, National Taiwan University (b98204032@gmail.com)
+ * @brief
+ * @date 2018-03-20
+ *
+ * @copyright Copyright (c) 2018-now
+ *
+ */
 #ifdef _OS2
 #define INCL_DOSMEMMGR
 #define INCL_DOSSEMAPHORES
 #include <os2.h>
 #endif
-/* Standard C header include */
+/**
+ * @name Standard C header include
+ *
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <string.h>
 #include <ctype.h>
 #include <math.h>
 #include <float.h>
 #include <time.h>
-/* Earthworm environment header include */
+/**
+ * @name Earthworm environment header include
+ *
+ */
 #include <earthworm.h>
 #include <kom.h>
 #include <transport.h>
 #include <lockfile.h>
 #include <trace_buf.h>
-/* Local header include */
+/**
+ * @name Local header include
+ *
+ */
 #include <scnlfilter.h>
 #include <dif2trace.h>
 #include <dif2trace_list.h>
 #include <dif2trace_filter.h>
 
-/* Functions prototype in this source file */
-static void dif2trace_config( char * );
+/**
+ * @name Functions prototype in this source file
+ *
+ */
+static void dif2trace_config( const char * );
 static void dif2trace_lookup( void );
 static void dif2trace_status( unsigned char, short, char * );
-static void dif2trace_end( void );                /* Free all the local memory & close socket */
+static void dif2trace_end( void );
 
 static void init_traceinfo( const TRACE2X_HEADER *, const uint8_t, _TRACEINFO * );
 static void operation_rmavg( _TRACEINFO *, TracePacket * );
@@ -37,7 +59,10 @@ static void operation_ddiff( _TRACEINFO *, TracePacket * );
 static void operation_int( _TRACEINFO *, TracePacket * );
 static void operation_dint( _TRACEINFO *, TracePacket * );
 
-/* Ring messages things */
+/**
+ * @name Ring messages things
+ *
+ */
 static SHM_INFO InRegion;      /* shared memory region to use for i/o    */
 static SHM_INFO OutRegion;     /* shared memory region to use for i/o    */
 /* */
@@ -46,12 +71,19 @@ static MSG_LOGO Putlogo;             /* array for output module, type, instid   
 static MSG_LOGO Getlogo[MAXLOGO];    /* array for requesting module, type, instid */
 static pid_t    MyPid;               /* for restarts by startstop                 */
 
+/**
+ * @name Operation flags
+ *
+ */
 #define OPERATION_DIFF  0
 #define OPERATION_DDIFF 1
 #define OPERATION_INT   2
 #define OPERATION_DINT  3
 
-/* Things to read or derive from configuration file */
+/**
+ * @name Things to read or derive from configuration file
+ *
+ */
 static char     InRingName[MAX_RING_STR];   /* name of transport ring for i/o    */
 static char     OutRingName[MAX_RING_STR];  /* name of transport ring for i/o    */
 static char     MyModName[MAX_MOD_STR];     /* speak as this module name/id      */
@@ -64,7 +96,10 @@ static uint8_t  HighPassOrder  = 2;         /* Order for high pass filter */
 static double   HighPassCorner = 0.075;     /* Corner frequency for high pass filter */
 static uint8_t  SCNLFilterSwitch = 0;       /* 0 if no filter command in the file    */
 
-/* Things to look up in the earthworm.h tables with getutil.c functions */
+/**
+ * @name Things to look up in the earthworm.h tables with getutil.c functions
+ *
+ */
 static int64_t InRingKey;       /* key of transport ring for i/o     */
 static int64_t OutRingKey;      /* key of transport ring for i/o     */
 static uint8_t InstId;          /* local installation id             */
@@ -73,15 +108,22 @@ static uint8_t TypeHeartBeat;
 static uint8_t TypeError;
 static uint8_t TypeTracebuf2 = 0;
 
-/* Error messages used by dif2trace */
+/**
+ * @name Error messages used by dif2trace
+ *
+ */
 #define  ERR_MISSMSG       0   /* message missed in transport ring       */
 #define  ERR_TOOBIG        1   /* retreived msg too large for buffer     */
 #define  ERR_NOTRACK       2   /* msg retreived; tracking limit exceeded */
 #define  ERR_QUEUE         3   /* error queueing message for sending      */
 static char Text[150];         /* string for log/error messages          */
 
-/*
+/**
+ * @brief Main entry.
  *
+ * @param argc
+ * @param argv
+ * @return int
  */
 int main ( int argc, char **argv )
 {
@@ -89,8 +131,8 @@ int main ( int argc, char **argv )
 
 	int64_t  recsize = 0;
 	MSG_LOGO reclogo;
-	time_t   time_now;          /* current time                  */
-	time_t   time_last_beat;     /* time last heartbeat was sent  */
+	time_t   time_now;        /* current time                  */
+	time_t   time_last_beat;  /* time last heartbeat was sent  */
 	char    *lockfile;
 	int32_t  lockfile_fd;
 
@@ -181,7 +223,7 @@ int main ( int argc, char **argv )
 /*----------------------- setup done; start main loop -------------------------*/
 	while ( 1 ) {
 	/* Send dif2trace's heartbeat */
-		if  ( time(&time_now) - time_last_beat >= (int64_t)HeartBeatInterval ) {
+		if ( time(&time_now) - time_last_beat >= (int64_t)HeartBeatInterval ) {
 			time_last_beat = time_now;
 			dif2trace_status( TypeHeartBeat, 0, "" );
 		}
@@ -233,7 +275,7 @@ int main ( int argc, char **argv )
 
 		/* Process the message */
 			if ( reclogo.type == TypeTracebuf2 ) {
-				if ( !TRACE2_HEADER_VERSION_IS_21(&(tracebuffer.trh2)) ) {
+				if ( !TRACE2_HEADER_VERSION_IS_20(&tracebuffer.trh2) && !TRACE2_HEADER_VERSION_IS_21(&tracebuffer.trh2) ) {
 					printf(
 						"dif2trace: SCNL %s.%s.%s.%s version is invalid, please check it!\n",
 						tracebuffer.trh2.sta, tracebuffer.trh2.chan, tracebuffer.trh2.net, tracebuffer.trh2.loc
@@ -314,7 +356,7 @@ int main ( int argc, char **argv )
 					#endif
 						continue;
 					}
-					else if ( tmp_time > 0.0 && traceptr->lasttime > 0.0 )	{
+					else if ( tmp_time > 0.0 && traceptr->lasttime > 0.0 ) {
 						if ( tmp_time >= DriftCorrectThreshold ) {
 							printf(
 								"dif2trace: Found %ld sample gap in SCNL %s.%s.%s.%s, restart tracing!\n",
@@ -364,7 +406,7 @@ int main ( int argc, char **argv )
 				}
 			}
 		} while ( 1 );  /* end of message-processing-loop */
-		sleep_ew(50);  /* no more messages; wait for new ones to arrive */
+		sleep_ew(50);   /* no more messages; wait for new ones to arrive */
 	}
 /*-----------------------------end of main loop-------------------------------*/
 exit_procedure:
@@ -377,28 +419,32 @@ exit_procedure:
 	return 0;
 }
 
-/*
- * dif2trace_config() - processes command file(s) using kom.c functions;
- *                      exits if any errors are encountered.
+/**
+ * @brief Number of required commands you expect to process
+ *
  */
-static void dif2trace_config( char *configfile )
+#define CONDFIG_NUM_COMMAND  8
+
+/**
+ * @brief processes command file(s) using kom.c functions;
+ *        exits if any errors are encountered.
+ *
+ * @param configfile
+ */
+static void dif2trace_config( const char *configfile )
 {
-	char  init[8];     /* init flags, one byte for each required command */
+	char  init[CONDFIG_NUM_COMMAND];  /* init flags, one byte for each required command */
 	char *com;
 	char *str;
-
-	int ncommand;     /* # of required commands you expect to process   */
-	int nmiss;        /* number of required commands that were missed   */
-	int nfiles;
-	int success;
-	int i;
+	int   nmiss;                      /* number of required commands that were missed   */
+	int   nfiles;
+	int   success;
 
 /* Set to zero one init flag for each required command */
-	ncommand = 8;
-	for( i = 0; i < ncommand; i++ )
+	for( int i = 0; i < CONDFIG_NUM_COMMAND; i++ )
 		init[i] = 0;
 /* Open the main configuration file */
-	nfiles = k_open( configfile );
+	nfiles = k_open(configfile);
 	if ( nfiles == 0 ) {
 		logit("e", "dif2trace: Error opening command file <%s>; exiting!\n", configfile);
 		exit(-1);
@@ -420,7 +466,7 @@ static void dif2trace_config( char *configfile )
 
 		/* Open a nested configuration file */
 			if ( com[0] == '@' ) {
-				success = nfiles+1;
+				success = nfiles + 1;
 				nfiles  = k_open(&com[1]);
 				if ( nfiles != success ) {
 					logit("e", "dif2trace: Error opening command file <%s>; exiting!\n", &com[1]);
@@ -468,7 +514,7 @@ static void dif2trace_config( char *configfile )
 					char typestr[8];
 				/* */
 					strncpy(typestr, str, 8);
-					for ( i = 0; i < 8; i++ )
+					for ( int i = 0; i < 8; i++ )
 						typestr[i] = tolower(typestr[i]);
 
 					if ( !strncmp(typestr, "diff", 4) ) {
@@ -557,12 +603,12 @@ static void dif2trace_config( char *configfile )
 
 /* After all files are closed, check init flags for missed commands */
 	nmiss = 0;
-	for ( i = 0; i < ncommand; i++ )
+	for ( int i = 0; i < CONDFIG_NUM_COMMAND; i++ )
 		if ( !init[i] )
 			nmiss++;
 /* */
 	if ( nmiss ) {
-		logit( "e", "dif2trace: ERROR, no " );
+		logit("e", "dif2trace: ERROR, no ");
 		if ( !init[0] ) logit("e", "<LogFile> "              );
 		if ( !init[1] ) logit("e", "<MyModuleId> "           );
 		if ( !init[2] ) logit("e", "<InputRing> "            );
@@ -579,8 +625,9 @@ static void dif2trace_config( char *configfile )
 	return;
 }
 
-/*
- * dif2trace_lookup() - Look up important info from earthworm.h tables
+/**
+ * @brief Look up important info from earthworm.h tables
+ *
  */
 static void dif2trace_lookup( void )
 {
@@ -620,9 +667,13 @@ static void dif2trace_lookup( void )
 	return;
 }
 
-/*
- * dif2trace_status() - builds a heartbeat or error message & puts it into
- *                      shared memory.  Writes errors to log file & screen.
+/**
+ * @brief Builds a heartbeat or error message & puts it into shared memory.
+ *        Writes errors to log file & screen.
+ *
+ * @param type
+ * @param ierr
+ * @param note
  */
 static void dif2trace_status( unsigned char type, short ierr, char *note )
 {
@@ -651,18 +702,19 @@ static void dif2trace_status( unsigned char type, short ierr, char *note )
 /* Write the message to shared memory */
 	if ( tport_putmsg(&InRegion, &logo, size, msg) != PUT_OK ) {
 		if ( type == TypeHeartBeat ) {
-			logit("et", "dif2trace:  Error sending heartbeat.\n");
+			logit("et", "dif2trace: Error sending heartbeat.\n");
 		}
 		else if ( type == TypeError ) {
-			logit("et", "dif2trace:  Error sending error:%d.\n", ierr);
+			logit("et", "dif2trace: Error sending error:%d.\n", ierr);
 		}
 	}
 
 	return;
 }
 
-/*
- * dif2trace_end() - free all the local memory & close socket
+/**
+ * @brief free all the local memory & detach from the shared memory.
+ *
  */
 static void dif2trace_end( void )
 {
@@ -675,12 +727,16 @@ static void dif2trace_end( void )
 	return;
 }
 
-/*
+/**
+ * @brief
  *
+ * @param trh2x
+ * @param opflag
+ * @param traceptr
  */
 static void init_traceinfo( const TRACE2X_HEADER *trh2x, const uint8_t opflag, _TRACEINFO *traceptr )
 {
-	traceptr->firsttime     = FALSE;
+	traceptr->firsttime     = false;
 	traceptr->readycount    = 0;
 	traceptr->lasttime      = 0.0;
 	traceptr->lastsample[0] = 0.0;

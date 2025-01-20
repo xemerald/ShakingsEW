@@ -1,10 +1,10 @@
 /**
  * @file cf2trace.c
- * @author Benjamin Ming Yang (b98204032@gmail.com) @ Department of Geology, National Taiwan University
+ * @author Benjamin Ming Yang @ Department of Geology, National Taiwan University (b98204032@gmail.com)
  * @brief
  * @date 2018-03-20
  *
- * @copyright Copyright (c) 2018
+ * @copyright Copyright (c) 2018-now
  *
  */
 #ifdef _OS2
@@ -48,7 +48,7 @@
 static void cf2trace_config( const char * );
 static void cf2trace_lookup( void );
 static void cf2trace_status( unsigned char, short, char * );
-static void cf2trace_end( void );                /* Free all the local memory & close socket */
+static void cf2trace_end( void );
 
 static int thread_update_list( void * );
 static int update_list_configfile( const char * );
@@ -378,7 +378,7 @@ exit_procedure:
 }
 
 /**
- * @brief # of required commands you expect to process
+ * @brief Number of required commands you expect to process
  *
  */
 #define CONDFIG_NUM_COMMAND  11

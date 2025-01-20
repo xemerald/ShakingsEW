@@ -1,4 +1,3 @@
-
 # This is dif2trace's parameter file
 
 # Basic Earthworm setup:
