@@ -1,37 +1,33 @@
-
-/*
- * scnfilter.c contains a function to filter messages based
- *               on content of site-component-network-loc fields.
- *               Works on TYPE_TRACEBUF, TYPE_TRACE_COMP_UA,
- *               TYPE_PICK2K, TYPE_CODA2K, messages.
+/**
+ * @file scnlfilter.c
+ * @author Origin from Lynn Dietz, 1998-11-12
+ * @author Benjamin Ming Yang @ Department of Geoscience, National Taiwan University (b98204032@gmail.com)
+ * @brief Source file that contains a series of function to filter messages based on content of site-component-network-loc fields.
+ * @date 2022-03-28
  *
- *               It can also rename channels in waveform data
- *               if desired.
+ * @copyright Copyright (c) 2022-now
  *
- *               Returns: 1 if this site-component-network-loc
- *                          is on the list of requested scnl's.
- *                        0 if it isn't.
- *                       -1 if it's an unknown message type.
- *
- * Origin from: 981112 Lynn Dietz
- *
- * Modified by: 20220328 Benjamin Yang @ National Taiwan University
  */
-/* */
+/**
+ * @name Standard C header include
+ *
+ */
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
-/* */
+/**
+ * @name Earthworm environment header include
+ *
+ */
 #include <earthworm.h>
-#include <time_ew.h>
-#include <trace_buf.h>
 #include <kom.h>
-#include <swap.h>
-/* */
-#include <tracepeak.h>
+#include <trace_buf.h>
 
+/**
+ * @name
+ *
+ */
 #define INCREMENT_SCNL  8                    /* increment the limit of # scnl's    */
 #define STA_STRLEN    (TRACE2_STA_LEN - 1)   /* max string-length of station code  */
 #define CHAN_STRLEN   (TRACE2_CHAN_LEN - 1)  /* max string-length of component code*/
@@ -45,7 +41,10 @@
 /* */
 #define WILDCARD_STR     "*"      /* wildcard string for SCNL */
 
-/* */
+/**
+ * @brief
+ *
+ */
 typedef struct {
 	char sta[TRACE2_STA_LEN];     /* original station name  */
 	char chan[TRACE2_CHAN_LEN];   /* original channel name  */
@@ -65,44 +64,44 @@ typedef struct {
 	void *extra;
 } SCNL_Filter;
 
-/* Local function prototypes & macros */
+/**
+ * @name Functions prototype in this source file
+ *
+ */
 static int          filter_wildcards( const SCNL_Filter *, const SCNL_Filter * );
-static int          remap_tracebuf_scnl( const SCNL_Filter *, TRACE_HEADER * );
-static int          remap_tracebuf2_scnl( const SCNL_Filter *, TRACE2_HEADER * );
-static int          remap_tracepv_scnl( const SCNL_Filter *, TRACE_PEAKVALUE * );
-static double       get_wavetime( const TRACE2_HEADER * );
 static char        *copytrim( char *, const char *, const int );
 static SCNL_Filter *realloc_scnlf_list( const char * );
-static void         swap_double( double * );
 static int          compare_scnl( const void *, const void * );  /* qsort & bsearch */
 
-/* Globals for site-comp-net-loc filter */
+/**
+ * @name Globals for site-comp-net-loc filter
+ *
+ */
 static SCNL_Filter *Lists      = NULL;       /* list of SCNL's to accept & rename   */
 static int          FilterInit = 0;     /* initialization flag                    */
 static int          Max_SCNL   = 0;     /* working limit on # scnl's to ship      */
 static int          nSCNL      = 0;     /* # of scnl's we're configured to ship   */
 static int          nWild      = 0;     /* # of Wildcards used in config file     */
-/* */
-static unsigned char TypeTraceBuf;    /* tbuf ver. 1 without Loc */
-static unsigned char TypeTraceBuf2;   /* tbuf ver. 2 with Loc */
-static unsigned char TypeTracePeak;   /* */
-/* */
+/**
+ * @name
+ *
+ */
 #define IS_WILD(SCNL)                 (!strcmp((SCNL), WILDCARD_STR))
 #define IS_MATCH(SCNL_A, SCNL_B)      (!strcmp((SCNL_A), (SCNL_B)))
 #define IS_NOT_MATCH(SCNL_A, SCNL_B)  (strcmp((SCNL_A), (SCNL_B)))
 
-/*
- * scnlfilter_com() - processes config-file commands to
- *                      set up the filter & send-list.
- * Returns  1 if the command was recognized & processed
- *          0 if the command was not recognized
- * Note: this function may exit the process if it finds
- *       serious errors in any commands
+/**
+ * @brief processes config-file commands to set up the filter & send-list.
+ *        this function may exit the process if it finds serious errors in any commands
+ *
+ * @param prog
+ * @return int
+ * @retval 1 if the command was recognized & processed
+ * @retval 0 if the command was not recognized
  */
 int scnlfilter_com( const char *prog )
 {
-	char   *str;
-	uint8_t fbit;
+	char *str;
 
 /* */
 	if ( nSCNL >= Max_SCNL )
@@ -134,7 +133,7 @@ int scnlfilter_com( const char *prog )
 	Lists[nSCNL].extra  = NULL;
 
 /* Read original SCNL */
-	for ( fbit = STA_FILTER_BIT; fbit > 0; fbit >>= 1 ) {
+	for ( register uint8_t fbit = STA_FILTER_BIT; fbit > 0; fbit >>= 1 ) {
 		if ( (str = k_str()) ) {
 		/* */
 			if ( IS_WILD(str) ) {
@@ -177,7 +176,7 @@ int scnlfilter_com( const char *prog )
 
 /* Read remap SCNL  */
 	if ( Lists[nSCNL].remap ) {
-		for ( fbit = STA_FILTER_BIT; fbit > 0; fbit >>= 1 ) {
+		for ( register uint8_t fbit = STA_FILTER_BIT; fbit > 0; fbit >>= 1 ) {
 			if ( (str = k_str()) ) {
 			/* */
 				if ( IS_WILD(str) )
@@ -230,8 +229,11 @@ except_com:
 	exit(-1);
 }
 
-/*
+/**
+ * @brief
  *
+ * @param extra_proc
+ * @return int
  */
 int scnlfilter_extra_com( void *(*extra_proc)( const char * ) )
 {
@@ -248,33 +250,21 @@ int scnlfilter_extra_com( void *(*extra_proc)( const char * ) )
 	return 1;
 }
 
-/*
- * scnlfilter_init() - Make sure all the required commands were found in the config file,
- *                     do any other startup things necessary for filter to work properly
+/**
+ * @brief Make sure all the required commands were found in the config file,
+ *        do any other startup things necessary for filter to work properly
+ *
+ * @param prog
+ * @return int
  */
 int scnlfilter_init( const char *prog )
 {
-	int i;
-
 /* Check to see if required config-file commands were processed */
 	if ( nSCNL == 0 ) {
 		logit(
 			"e", "%s: No any <Allow_SCNL> or <Allow_SCNL_Remap> commands in config file;"
 			" no data will be processed!\n", prog
 		);
-		return -1;
-	}
-/* Look up message types of we can deal with */
-	if ( GetType("TYPE_TRACEBUF", &TypeTraceBuf) != 0 ) {
-		logit("e", "%s: Invalid message type <TYPE_TRACEBUF>\n", prog);
-		return -1;
-	}
-	if ( GetType("TYPE_TRACEBUF2", &TypeTraceBuf2) != 0 ) {
-		logit("e", "%s: Invalid message type <TYPE_TRACEBUF2>\n", prog);
-		return -1;
-	}
-	if ( GetType("TYPE_TRACEPEAK", &TypeTracePeak) != 0 ) {
-		logit("e", "%s: Invalid message type <TYPE_TRACEPEAK>\n", prog);
 		return -1;
 	}
 /* Sort and Log list of SCNL's that we're handling */
@@ -293,7 +283,7 @@ int scnlfilter_init( const char *prog )
 	}
 
 	logit("o", "%s: configured to handle %d channels:", prog, nSCNL);
-	for ( i = 0; i < nSCNL; i++ ) {
+	for ( register int i = 0; i < nSCNL; i++ ) {
 		if ( Lists[i].block ) {
 			logit(
 				"o","\n   Blocking channel[%d]: %5s %3s %2s %2s",
@@ -320,17 +310,20 @@ int scnlfilter_init( const char *prog )
 	return 0;
 }
 
-/*
- * scnlfilter_apply() - looks at the candidate message.
- *   returns: the priority if SCNL is in "send" list
- *            otherwise EW_PRIORITY_NONE (0) if not found
+/**
+ * @brief Looks at the candidate message.
  *
- *   20020319 dbh Changed the return code handling
+ * @param sta
+ * @param chan
+ * @param net
+ * @param loc
+ * @param outmatch
+ * @return int
  */
 int scnlfilter_apply( const char *sta, const char *chan, const char *net, const char *loc, const void **outmatch )
 {
-	int          i;
-	SCNL_Filter  key;          /* Key for binary search       */
+	register int i;
+	SCNL_Filter  key;          /* Key for binary search        */
 	SCNL_Filter *match;        /* Pointer into Lists-list      */
 	SCNL_Filter *current;
 /* */
@@ -369,8 +362,9 @@ int scnlfilter_apply( const char *sta, const char *chan, const char *net, const 
 		/* logit(
 			"e","scnlfilter: rejecting msgtype:%d from %s %s %s %s\n",
 			intype, key.sta, key.chan, key.net, key.loc
-		); */   /*DEBUG*/
-		return 0;   /* SCNL not in Lists list */
+		); */
+		/* DEBUG */
+		return 0;  /* SCNL not in Lists list */
 	}
 
 /*
@@ -385,57 +379,61 @@ int scnlfilter_apply( const char *sta, const char *chan, const char *net, const 
 		"e","scnlfilter: accepting msgtype:%d from %s %s %s %s\n",
 		intype, key.sta, key.chan, key.net, key.loc
 	);
-*/  /* DEBUG */
+*/
+/* DEBUG */
 
-   return 1;
+	return 1;
 }
 
-/*
+/**
+ * @brief
  *
+ * @param sta
+ * @param chan
+ * @param net
+ * @param loc
+ * @param match
+ * @return int
  */
-int scnlfilter_trace_apply( const void *inmsg, const unsigned char intype, const void **outmatch )
-{
-	const TRACE2_HEADER   *trh2 = (const TRACE2_HEADER *)inmsg;
-	const TRACE_HEADER    *trh  = (const TRACE_HEADER *)inmsg;
-	const TRACE_PEAKVALUE *tpv  = (const TRACE_PEAKVALUE *)inmsg;
-
-/* */
-	if ( !FilterInit )
-		scnlfilter_init( "scnlfilter_trace_apply" );
-/* */
-	if ( intype == TypeTraceBuf2 )
-		return scnlfilter_apply( trh2->sta, trh2->chan, trh2->net, trh2->loc, outmatch );
-	else if ( intype == TypeTraceBuf )
-		return scnlfilter_apply( trh->sta, trh->chan, trh->net, NULL, outmatch );
-	else if ( intype == TypeTracePeak )
-		return scnlfilter_apply( tpv->sta, tpv->chan, tpv->net, tpv->loc, outmatch );
-	else
-		return 0;
-}
-
-/*
- *
- */
-int scnlfilter_trace_remap( void *inmsg, const unsigned char intype, const void *match )
+int scnlfilter_remap( char *sta, char *chan, char *net, char *loc, const void *match )
 {
 	const SCNL_Filter *_match = (const SCNL_Filter *)match;
 
-
+/* */
 	if ( _match && _match->remap ) {
-	/* Rename it by the SCNL from match pointer */
-		if ( intype == TypeTraceBuf2 )
-			return remap_tracebuf2_scnl( _match, (TRACE2_HEADER *)inmsg );
-		else if ( intype == TypeTraceBuf )
-			return remap_tracebuf_scnl( _match, (TRACE_HEADER *)inmsg );
-		else if ( intype == TypeTracePeak )
-			return remap_tracepv_scnl( _match, (TRACE_PEAKVALUE *)inmsg );
+		for ( register uint8_t fbit = STA_FILTER_BIT; fbit > 0; fbit >>= 1 ) {
+			if ( !(_match->rwilds & fbit) ) {
+				switch ( fbit ) {
+				case STA_FILTER_BIT:
+					if ( sta )
+						strncpy(sta, _match->rsta, TRACE2_STA_LEN);
+					break;
+				case CHAN_FILTER_BIT:
+					if ( chan )
+						strncpy(chan, _match->rchan, TRACE2_CHAN_LEN);
+					break;
+				case NET_FILTER_BIT:
+					if ( net )
+						strncpy(net, _match->rnet, TRACE2_NET_LEN);
+					break;
+				case LOC_FILTER_BIT:
+					if ( loc )
+						strncpy(loc, _match->rloc, TRACE2_LOC_LEN);
+				default:
+					break;
+				}
+			}
+		}
 	}
 
-	return 0;
+	return 1;
 }
 
-/*
+/**
+ * @brief
  *
+ * @param match
+ * @return void*
  */
 void *scnlfilter_extra_get( const void *match )
 {
@@ -448,50 +446,14 @@ void *scnlfilter_extra_get( const void *match )
 		return NULL;
 }
 
-/*
- * scnlfilter_logmsg() - simple logging of message
- */
-void scnlfilter_logmsg( char *msg, const int msglen, const unsigned char msgtype, const char *note )
-{
-	TRACE2_HEADER *thd2 = (TRACE2_HEADER *)msg;
-	char           tmpstr[128];
-	double         tstart;
-	int            endstr = (int)sizeof(tmpstr) - 1;
-
-	if ( msgtype == TypeTraceBuf2 ) {
-		tstart = get_wavetime( thd2 );
-		datestr23( tstart, tmpstr, sizeof(tmpstr) );
-		logit(
-			"t", "%s t%d %s.%s.%s.%s %s\n",
-			note, (int)msgtype, thd2->sta, thd2->chan, thd2->net, thd2->loc, tmpstr
-		);
-	}
-	else if ( msgtype == TypeTraceBuf ) {
-		tstart = get_wavetime(thd2);
-		datestr23( tstart, tmpstr, sizeof(tmpstr) );
-		logit(
-			"t", "%s t%d %s.%s.%s %s\n",
-			note, (int)msgtype, thd2->sta, thd2->chan, thd2->net, tmpstr
-		);
-	}
-	else {
-		if ( msglen < endstr )
-			endstr = msglen;
-		memcpy(tmpstr, msg, endstr);
-		tmpstr[endstr] = 0;
-		logit("t", "%s t%d %s\n", note, (int)msgtype, tmpstr);
-	}
-
-	return;
-}
-
-/*
- * scnlfilter_end() - frees allocated memory and
- *                    does any other cleanup stuff
+/**
+ * @brief Frees allocated memory and does any other cleanup stuff
+ *
+ * @param free_extra
  */
 void scnlfilter_end( void (*free_extra)( void * ) )
 {
-	int          i;
+	register int i;
 	SCNL_Filter *current;
 
 /* */
@@ -507,15 +469,17 @@ void scnlfilter_end( void (*free_extra)( void * ) )
 	return;
 }
 
-/*
+/**
+ * @brief
  *
+ * @param filter
+ * @param key
+ * @return int
  */
 static int filter_wildcards( const SCNL_Filter *filter, const SCNL_Filter *key )
 {
-	uint8_t fbit;
-
 /* */
-	for ( fbit = STA_FILTER_BIT; fbit > 0; fbit >>= 1 ) {
+	for ( register uint8_t fbit = STA_FILTER_BIT; fbit > 0; fbit >>= 1 ) {
 		if ( !(filter->owilds & fbit) ) {
 			switch ( fbit ) {
 			case STA_FILTER_BIT:
@@ -543,106 +507,17 @@ static int filter_wildcards( const SCNL_Filter *filter, const SCNL_Filter *key )
 	return 1;
 }
 
-/*
+/**
+ * @brief Copies n bytes from one string to another, trimming off any leading and trailing blank spaces
  *
- */
-static int remap_tracebuf_scnl( const SCNL_Filter *filter, TRACE_HEADER *trh )
-{
-	uint8_t fbit;
-
-/* */
-	for ( fbit = STA_FILTER_BIT; fbit > 0; fbit >>= 1 ) {
-		if ( !(filter->rwilds & fbit) ) {
-			switch ( fbit ) {
-			case STA_FILTER_BIT:
-				memcpy(trh->sta, filter->rsta, TRACE2_STA_LEN);
-				break;
-			case CHAN_FILTER_BIT:
-				memcpy(trh->chan, filter->rchan, TRACE2_CHAN_LEN);
-				break;
-			case NET_FILTER_BIT:
-				memcpy(trh->net, filter->rnet, TRACE2_NET_LEN);
-				break;
-			case LOC_FILTER_BIT:
-				/* There is not location info in trace buffer ver. 1 */
-			default:
-				break;
-			}
-		}
-	}
-
-	return 1;
-}
-
-/*
- *
- */
-static int remap_tracebuf2_scnl( const SCNL_Filter *filter, TRACE2_HEADER *trh2 )
-{
-	uint8_t fbit;
-
-/* */
-	for ( fbit = STA_FILTER_BIT; fbit > 0; fbit >>= 1 ) {
-		if ( !(filter->rwilds & fbit) ) {
-			switch ( fbit ) {
-			case STA_FILTER_BIT:
-				memcpy(trh2->sta, filter->rsta, TRACE2_STA_LEN);
-				break;
-			case CHAN_FILTER_BIT:
-				memcpy(trh2->chan, filter->rchan, TRACE2_CHAN_LEN);
-				break;
-			case NET_FILTER_BIT:
-				memcpy(trh2->net, filter->rnet, TRACE2_NET_LEN);
-				break;
-			case LOC_FILTER_BIT:
-				memcpy(trh2->loc, filter->rloc, TRACE2_LOC_LEN);
-			default:
-				break;
-			}
-		}
-	}
-
-	return 1;
-}
-
-/*
- *
- */
-static int remap_tracepv_scnl( const SCNL_Filter *filter, TRACE_PEAKVALUE *tpv )
-{
-	uint8_t fbit;
-
-/* */
-	for ( fbit = STA_FILTER_BIT; fbit > 0; fbit >>= 1 ) {
-		if ( !(filter->rwilds & fbit) ) {
-			switch ( fbit ) {
-			case STA_FILTER_BIT:
-				memcpy(tpv->sta, filter->rsta, TRACE2_STA_LEN);
-				break;
-			case CHAN_FILTER_BIT:
-				memcpy(tpv->chan, filter->rchan, TRACE2_CHAN_LEN);
-				break;
-			case NET_FILTER_BIT:
-				memcpy(tpv->net, filter->rnet, TRACE2_NET_LEN);
-				break;
-			case LOC_FILTER_BIT:
-				memcpy(tpv->loc, filter->rloc, TRACE2_LOC_LEN);
-			default:
-				break;
-			}
-		}
-	}
-
-	return 1;
-}
-
-/*
- * copytrim() - copies n bytes from one string to another,
- *              trimming off any leading and trailing blank spaces
+ * @param dest
+ * @param src
+ * @param n
+ * @return char*
  */
 static char *copytrim( char *dest, const char *src, const int n )
 {
-	int i, len;
+	register int i, len;
 
 /* DEBUG */
 /* printf( "copy %3d bytes of src: \"%s\"\n", n, src ); */
@@ -669,43 +544,11 @@ static char *copytrim( char *dest, const char *src, const int n )
 	return dest;
 }
 
-/*
- *  get_wavetime() - Return value of starttime from a tracebuf header
- *                   Returns -1. if unknown data type,
- */
-static double get_wavetime( const TRACE2_HEADER* wvmsg )
-{
-	char   byte_order;
-	char   data_size;
-	double packettime;  /* time from trace_buf header */
-
-/* See what sort of data it carries */
-	byte_order = wvmsg->datatype[0];
-	data_size  = wvmsg->datatype[1];
-
-/* Return now if we don't know this message type */
-	if ( byte_order != 'i' && byte_order != 's' )
-		return -1.;
-	if ( data_size != '2' && data_size  != '4' )
-		return -1.;
-/* */
-	packettime = wvmsg->starttime;
-#if defined( _SPARC )
-	if ( byte_order == 'i' )
-		swap_double( &packettime );
-#elif defined( _INTEL )
-	if ( byte_order == 's' )
-		swap_double( &packettime );
-#else
-   logit("", "get_wavetime WARNING! _INTEL and _SPARC are both undefined.");
-   return -1.;
-#endif
-
-   return packettime;
-}
-
-/*
+/**
+ * @brief
  *
+ * @param prog
+ * @return SCNL_Filter*
  */
 static SCNL_Filter *realloc_scnlf_list( const char *prog )
 {
@@ -723,50 +566,21 @@ static SCNL_Filter *realloc_scnlf_list( const char *prog )
 	return Lists;
 }
 
-/*
+/**
+ * @brief This function is passed to qsort() and bsearch().
+ *        We use qsort() to sort the station list by SCNL numbers,
+ *        and we use bsearch to look up an SCNL in the list if no
+ *        wildcards were used in the requested channel list
  *
- */
-static void swap_double( double *data )
-{
-	uint8_t temp;
-	union {
-		uint8_t c[8];
-	} dat;
-
-	memcpy(&dat, data, sizeof(double));
-	temp     = dat.c[0];
-	dat.c[0] = dat.c[7];
-	dat.c[7] = temp;
-
-	temp     = dat.c[1];
-	dat.c[1] = dat.c[6];
-	dat.c[6] = temp;
-
-	temp     = dat.c[2];
-	dat.c[2] = dat.c[5];
-	dat.c[5] = temp;
-
-	temp     = dat.c[3];
-	dat.c[3] = dat.c[4];
-	dat.c[4] = temp;
-	memcpy(data, &dat, sizeof(double));
-
-	return;
-}
-
-/*
- * compare_scnl() -
- *
- *  This function is passed to qsort() and bsearch().
- *  We use qsort() to sort the station list by SCNL numbers,
- *  and we use bsearch to look up an SCNL in the list if no
- *  wildcards were used in the requested channel list
+ * @param s1
+ * @param s2
+ * @return int
  */
 static int compare_scnl( const void *s1, const void *s2 )
 {
-	int rc;
 	SCNL_Filter *t1 = (SCNL_Filter *)s1;
 	SCNL_Filter *t2 = (SCNL_Filter *)s2;
+	int          rc;
 
 	if ( (rc = memcmp(t1->sta, t2->sta, TRACE2_STA_LEN)) )
 		return rc;
@@ -774,5 +588,5 @@ static int compare_scnl( const void *s1, const void *s2 )
 		return rc;
 	if ( (rc = memcmp(t1->net, t2->net, TRACE2_NET_LEN)) )
 		return rc;
-	return rc = memcmp(t1->loc, t2->loc, TRACE2_LOC_LEN);
+	return (rc = memcmp(t1->loc, t2->loc, TRACE2_LOC_LEN));
 }

@@ -133,7 +133,7 @@ int cf2tra_list_chan_line_parse( const char *line, const int update )
 	if ( sscanf(line, "%s %s %s %s %s %lf", sta, net, loc, chan, typestr, &cfactor) >= 6 ) {
 	/* */
 		rtype = typestr2num( typestr );
-		if ( append_traceinfo_list( TList, create_new_traceinfo( sta, net, loc, chan, rtype, cfactor ), update ) == NULL )
+		if ( !append_traceinfo_list( TList, create_new_traceinfo( sta, net, loc, chan, rtype, cfactor ), update ) )
 			result = -2;
 	}
 	else {
@@ -173,7 +173,7 @@ _TRACEINFO *cf2tra_list_find( const TRACE2X_HEADER *trh2x )
 	memcpy(key.loc, trh2x->loc, TRACE2_LOC_LEN);
 	memcpy(key.chan, trh2x->chan, TRACE2_CHAN_LEN);
 /* Find which station */
-	if ( (result = tfind(&key, &TList->root, compare_scnl)) != NULL ) {
+	if ( (result = tfind(&key, &TList->root, compare_scnl)) ) {
 	/* Found in the main Palert table */
 		result = *(_TRACEINFO **)result;
 	}
@@ -279,14 +279,14 @@ static int fetch_list_sql( TraceList *list, const char *table_chan, const DBINFO
 		COL_CHAN_STATION, COL_CHAN_NETWORK, COL_CHAN_LOCATION,
 		COL_CHAN_CHANNEL, COL_CHAN_RECORD, COL_CHAN_CFACTOR
 	);
-	if ( sql_res == NULL )
+	if ( !sql_res )
 		return -1;
 	printf("cf2trace: Queried the channels information success!\n");
 
 /* Start the SQL server connection for channel */
 	dblist_start_persistent_sql( dbinfo );
 /* Read station list from query result */
-	while ( (sql_row = dblist_fetch_row_sql( sql_res )) != NULL ) {
+	while ( (sql_row = dblist_fetch_row_sql( sql_res )) ) {
 	/* */
 		extract_traceinfo_mysql(
 			sta, net, loc, chan, &rtype, &cfactor,
@@ -296,7 +296,7 @@ static int fetch_list_sql( TraceList *list, const char *table_chan, const DBINFO
 		if (
 			append_traceinfo_list(
 				list, create_new_traceinfo( sta, net, loc, chan, rtype, cfactor ), update
-			) != NULL
+			)
 		) {
 			result++;
 		}
@@ -419,20 +419,20 @@ static _TRACEINFO *append_traceinfo_list( TraceList *list, _TRACEINFO *traceinfo
 
 /* */
 	if ( list && traceinfo ) {
-		if ( (result = tfind(traceinfo, _root, compare_scnl)) == NULL ) {
+		if ( !(result = tfind(traceinfo, _root, compare_scnl)) ) {
 		/* Insert the station information into binary tree */
-			if ( dl_node_append( (DL_NODE **)&list->entry, traceinfo ) == NULL ) {
+			if ( !dl_node_append( (DL_NODE **)&list->entry, traceinfo ) ) {
 				logit("e", "cf2trace: Error insert channel into linked list!\n");
 				goto except;
 			}
-			if ( (result = tsearch(traceinfo, &list->root_t, compare_scnl)) == NULL ) {
+			if ( !(result = tsearch(traceinfo, &list->root_t, compare_scnl)) ) {
 				logit("e", "cf2trace: Error insert channel into binary tree!\n");
 				goto except;
 			}
 		}
 		else if ( update == CF2TRA_LIST_UPDATING ) {
 			update_traceinfo( *(_TRACEINFO **)result, traceinfo );
-			if ( (result = tsearch(traceinfo, &list->root_t, compare_scnl)) == NULL ) {
+			if ( !(result = tsearch(traceinfo, &list->root_t, compare_scnl)) ) {
 				logit("e", "cf2trace: Error insert channel into binary tree!\n");
 				goto except;
 			}

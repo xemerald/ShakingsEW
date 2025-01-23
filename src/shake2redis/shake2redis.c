@@ -278,7 +278,7 @@ int main ( int argc, char **argv )
 				if (
 					!((stapeak = sk2rd_list_find( buffer.tpv.sta, buffer.tpv.net, buffer.tpv.loc )) &&
 					(chapeak = sk2rd_list_chlist_find( stapeak, buffer.tpv.chan ))) &&
-					!scnlfilter_trace_apply( buffer.msg, reclogo.type, &_match )
+					!scnlfilter_apply( buffer.tpv.sta, buffer.tpv.chan, buffer.tpv.net, buffer.tpv.loc, &_match )
 				) {
 				#ifdef _SEW_DEBUG
 					printf("shake2redis: Found SCNL %s.%s.%s.%s but not in the filter, drop it!\n",
@@ -306,7 +306,7 @@ int main ( int argc, char **argv )
 						);
 						continue;
 					}
-					if ( scnlfilter_trace_remap( buffer.msg, reclogo.type, _match ) ) {
+					if ( scnlfilter_remap( buffer.tpv.sta, buffer.tpv.chan, buffer.tpv.net, buffer.tpv.loc, _match ) ) {
 					/* First time remap the trace's SCNL */
 						printf(
 							"shake2redis: Remap received trace SCNL %s.%s.%s.%s to %s.%s.%s.%s!\n",
@@ -317,7 +317,7 @@ int main ( int argc, char **argv )
 					chapeak->match = _match;
 				}
 				else {
-					scnlfilter_trace_remap( buffer.msg, reclogo.type, chapeak->match );
+					scnlfilter_remap( buffer.tpv.sta, buffer.tpv.chan, buffer.tpv.net, buffer.tpv.loc, chapeak->match );
 				/* Fetch the extra argument */
 					_extra = scnlfilter_extra_get( chapeak->match );
 				}

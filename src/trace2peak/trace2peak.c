@@ -269,7 +269,7 @@ int main ( int argc, char **argv )
 				if (
 					SCNLFilterSwitch &&
 					!(traceptr = tra2peak_list_find( &tracebuffer.trh2x )) &&
-					!scnlfilter_trace_apply( tracebuffer.msg, reclogo.type, &_match )
+					!scnlfilter_apply( tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc, &_match )
 				) {
 				#ifdef _SEW_DEBUG
 					printf("trace2peak: Found SCNL %s.%s.%s.%s but not in the filter, drop it!\n",
@@ -301,10 +301,10 @@ int main ( int argc, char **argv )
 			/* Remap the SCNL of this incoming trace */
 				if ( SCNLFilterSwitch ) {
 					if ( traceptr->match ) {
-						scnlfilter_trace_remap( tracebuffer.msg, reclogo.type, traceptr->match );
+						scnlfilter_remap( tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc, traceptr->match );
 					}
 					else {
-						if ( scnlfilter_trace_remap( tracebuffer.msg, reclogo.type, _match ) ) {
+						if ( scnlfilter_remap( tracebuffer.trh2x.sta, tracebuffer.trh2x.chan, tracebuffer.trh2x.net, tracebuffer.trh2x.loc, _match ) ) {
 							printf(
 								"trace2peak: Remap received trace SCNL %s.%s.%s.%s to %s.%s.%s.%s!\n",
 								traceptr->sta, traceptr->chan, traceptr->net, traceptr->loc,
